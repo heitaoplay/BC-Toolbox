@@ -2,7 +2,7 @@
 // @name         BC工具箱
 // @name:zh      BC工具箱
 // @namespace    https://github.com/heitaoplay/BC-Toolbox
-// @version      3.0.0
+// @version      3.1.0
 // @description  BC 多功能工具箱 - BC工具箱 (R121 Compatible) + UI 面板 + 角色选择器 + Canvas SVG 图标 + 拖拽排序 + 主题自定义 + 自动解绑女仆
 // @author       heitaoplay
 // @include      /^https:\/\/(www\.)?bondage(projects\.elementfx|-(europe|asia))\.com\/.*/
@@ -30,7 +30,7 @@
     }
     window.__BCToolboxLoaded__ = true;
     let modApi = null;
-    const modversion = "2.3.9";
+    const modversion = "3.1.0";
 
     const rpBtnX    = 955;
     const rpBtnY    = 855;
@@ -80,6 +80,8 @@
         ooc:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5z"/><path d="M8 10h8M8 13.5h5"/></svg>',
         edit:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
         wake:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
+        wakeSleep: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>',
+        wakeHypno: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><path d="M12 5v2M12 17v2M5 12h2M17 12h2"/></svg>',
         infinity:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 9.5a2.5 2.5 0 1 0 0 5c1.6 0 2.6-1.1 3.5-2.5S14.4 9.5 16 9.5a2.5 2.5 0 1 1 0 5c-1.6 0-2.6-1.1-3.5-2.5S10.6 9.5 8.5 9.5z"/></svg>',
         guard:     '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3l7 3v5c0 4.5-3 8.5-7 10-4-1.5-7-5.5-7-10V6z"/><path d="M9 12l2 2 4-4"/></svg>',
         craftEdit:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 13.42 20.59a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.4"/></svg>',
@@ -228,10 +230,13 @@
         try {
             var s = localStorage.getItem(STORAGE_TOOL_ORDER);
             if (s) {
-                var order = JSON.parse(s);
+                var saved = JSON.parse(s);
                 var validIds = ALL_ACTIONS.map(function(a) { return a.id; });
-                if (Array.isArray(order) && order.length === validIds.length && order.every(function(id) { return validIds.includes(id); })) {
-                    return order;
+                if (Array.isArray(saved)) {
+                    // 过滤掉已移除的动作，并补齐新增动作，保留用户自定义顺序
+                    var known = saved.filter(function(id) { return validIds.includes(id); });
+                    validIds.forEach(function(id) { if (!known.includes(id)) known.push(id); });
+                    if (known.length === validIds.length) return known;
                 }
             }
         } catch (_) {}
@@ -333,8 +338,8 @@
             arNoRestraint:   "当前身上没有可加入白名单的拘束",
 
             lscgSection:     "LSCG 唤醒",
-            lscgWake:        "唤醒",
-            lscgUnzonk:      "催眠唤醒",
+            lscgWake:        "睡眠",
+            lscgUnzonk:      "催眠",
             lscgWakeCmd:     "睡眠醒来",
             lscgMissing:     "未检测到 LSCG 插件，无法执行该命令",
             lscgHelp:        "lscg <unzonk|wake>：执行 LSCG 唤醒命令",
@@ -461,8 +466,8 @@
             arNoRestraint:   "No worn restraints available to whitelist",
 
             lscgSection:     "LSCG Wake",
-            lscgWake:        "Wake",
-            lscgUnzonk:      "Unzonk (hypnosis)",
+            lscgWake:        "Sleep",
+            lscgUnzonk:      "Hypnosis",
             lscgWakeCmd:     "Wake (sleep)",
             lscgMissing:     "LSCG not detected, command unavailable",
             lscgHelp:        "lscg <unzonk|wake>: run an LSCG wake command",
@@ -1388,6 +1393,20 @@
             ".lt-lscg-pop .lt-lscg-item:hover{background:rgba(139,45,196,0.24);color:#fff;}",
             ".lt-lscg-pop .lt-lscg-item .lt-lscg-sub{font-size:10.5px;color:#8a7ab0;margin-left:auto;opacity:0.85;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}",
 
+            // ═══ 唤醒二级菜单（睡眠 / 催眠）═══════════════════════════════════════════
+            ".lt-wake-pop{position:fixed;z-index:2147483647;background:linear-gradient(180deg,#241a3d,#1a1430);border:1px solid rgba(255,255,255,0.14);border-radius:12px;padding:6px;box-shadow:0 12px 34px rgba(0,0,0,0.55);display:flex;flex-direction:column;gap:2px;font-family:'Noto Sans TC',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;box-sizing:border-box;}",
+            ".lt-wake-pop .lt-wake-item{padding:10px 14px;border-radius:8px;font-size:12.5px;color:#e8e8f0;cursor:pointer;transition:all 0.15s;display:flex;align-items:center;gap:10px;}",
+            ".lt-wake-pop .lt-wake-item .lt-wake-ic{width:18px;height:18px;display:inline-flex;align-items:center;justify-content:center;flex:0 0 18px;}",
+            ".lt-wake-pop .lt-wake-item .lt-wake-ic svg{width:18px;height:18px;}",
+            ".lt-wake-pop .lt-wake-item .lt-wake-label{font-weight:600;}",
+            ".lt-wake-pop .lt-wake-item .lt-wake-sub{font-size:10.5px;color:#9a8ac0;margin-left:auto;opacity:0.85;font-family:ui-monospace,SFMono-Regular,Menlo,monospace;}",
+            ".lt-wake-pop .lt-wake-sleep{border-left:3px solid #4ea3ff;}",
+            ".lt-wake-pop .lt-wake-sleep .lt-wake-ic{color:#4ea3ff;}",
+            ".lt-wake-pop .lt-wake-sleep:hover{background:rgba(78,163,255,0.18);color:#fff;}",
+            ".lt-wake-pop .lt-wake-hypno{border-left:3px solid #b15cff;}",
+            ".lt-wake-pop .lt-wake-hypno .lt-wake-ic{color:#b15cff;}",
+            ".lt-wake-pop .lt-wake-hypno:hover{background:rgba(177,92,255,0.18);color:#fff;}",
+
             // ═══ 设置面板样式 ═══════════════════════════════════════════════════
             ".lt-settings{display:flex;flex-direction:column;gap:20px;padding:4px 0;}",
             ".lt-settings-label{font-size:10px;font-weight:600;color:var(--lt-text-dim,#6a8ab0);text-transform:uppercase;letter-spacing:0.12em;margin-bottom:10px;}",
@@ -1471,8 +1490,7 @@
         }},
         { id: 'password',  icon: SVG.password,  label: '锁密码',  title: '查看当前锁的密码', fn: function() { execChatCommand('/infolock'); } },
         { id: 'struggle',  icon: SVG.struggle,  label: '挣扎',    title: 'LSCG 挣脱指令', fn: function() { execChatCommand('/lscg escape'); } },
-        { id: 'wake',      icon: SVG.wake,      label: '唤醒',    title: 'LSCG 睡眠唤醒（/lscg wake）', fn: function() { ltSendLscg('wake'); } },
-        { id: 'unzonk',    icon: SVG.wake,      label: '催眠唤醒', title: 'LSCG 催眠唤醒（/lscg unzonk）', fn: function() { ltSendLscg('unzonk'); } },
+        { id: 'wake',      icon: SVG.wake,      label: '唤醒',    title: 'LSCG 唤醒：睡眠 / 催眠', fn: function() { openWakeMenu(); } },
         { id: 'enhance',   icon: SVG.enhance,   label: '增强',    title: '获取道具/金钱/技能', fn: function() { getEverything(); } },
         { id: 'bcxcmd',    icon: SVG.bcxcmd,    label: 'BCX指令', title: '触发 BCX 指令（表情/姿态/场所/文本等）', fn: async function() {
             await openBcxCommandPanel();
@@ -1744,6 +1762,78 @@
             return btn;
         }
 
+        // 唤醒二级菜单：睡眠（/lscg wake）/ 催眠（/lscg unzonk），差异化视觉
+        var wakePop = null;
+        var wakePopClose = null;
+        function openWakeMenu() {
+            // 已打开则切换关闭（复用同一引用，确保监听能正确移除）
+            if (wakePop) {
+                wakePop.remove();
+                if (wakePopClose) document.removeEventListener('mousedown', wakePopClose, true);
+                wakePop = null; wakePopClose = null;
+                return;
+            }
+            var anchor = document.querySelector('.ltq-action[data-id="wake"]') || actionGridEl;
+            var pop = document.createElement('div');
+            pop.className = 'lt-wake-pop';
+
+            var items = [
+                { label: '睡眠', sub: '/lscg wake',   icon: SVG.wakeSleep, cmd: 'wake',   cls: 'lt-wake-sleep' },
+                { label: '催眠', sub: '/lscg unzonk', icon: SVG.wakeHypno, cmd: 'unzonk', cls: 'lt-wake-hypno' }
+            ];
+            items.forEach(function(it) {
+                var item = document.createElement('div');
+                item.className = 'lt-wake-item ' + it.cls;
+
+                var ic = document.createElement('span');
+                ic.className = 'lt-wake-ic';
+                ic.innerHTML = it.icon;
+
+                var lbl = document.createElement('span');
+                lbl.className = 'lt-wake-label';
+                lbl.textContent = it.label;
+
+                var sub = document.createElement('span');
+                sub.className = 'lt-wake-sub';
+                sub.textContent = it.sub;
+
+                item.appendChild(ic);
+                item.appendChild(lbl);
+                item.appendChild(sub);
+
+                item.addEventListener('click', function(ev) {
+                    ev.stopPropagation();
+                    ltSendLscg(it.cmd);
+                    pop.remove();
+                    document.removeEventListener('mousedown', onDown, true);
+                    wakePop = null; wakePopClose = null;
+                });
+                pop.appendChild(item);
+            });
+
+            document.body.appendChild(pop);
+
+            // 定位到唤醒按钮下方，超出视口则翻到上方
+            var r = anchor.getBoundingClientRect();
+            pop.style.width = Math.max(r.width, 170) + 'px';
+            pop.style.left = r.left + 'px';
+            var ph = pop.offsetHeight;
+            var top = r.bottom + 6;
+            if (top + ph > window.innerHeight) top = r.top - ph - 6;
+            pop.style.top = top + 'px';
+
+            function onDown(e) {
+                if (!pop.contains(e.target) && !anchor.contains(e.target)) {
+                    pop.remove();
+                    document.removeEventListener('mousedown', onDown, true);
+                    wakePop = null; wakePopClose = null;
+                }
+            }
+            wakePop = pop;
+            wakePopClose = onDown;
+            setTimeout(function() { document.addEventListener('mousedown', onDown, true); }, 0);
+        }
+
         function updateToggleState(ref, key) {
             var isOn = false;
             if (key === 'rp') isOn = getRpMode(Player);
@@ -1923,6 +2013,8 @@
         toolPanelVisible = false;
         if (toolPanelEl) toolPanelEl.classList.remove('show');
         document.querySelectorAll('.lt-lscg-pop').forEach(function(e) { e.remove(); });
+        document.querySelectorAll('.lt-wake-pop').forEach(function(e) { e.remove(); });
+        wakePop = null; wakePopClose = null;
     }
 
     function toggleToolPanel() {
