@@ -1,6 +1,6 @@
 # BC工具箱（BC Toolbox）
 
-BC 多功能工具箱油猴脚本。在原 **Liko - Tool**（作者 Liko / Likolisu）基础上继续开发与维护，现由 **heitaoplay** 接手。
+BC 多功能工具箱油猴脚本。在原 **Liko - Tool**（作者 Liko / Likolisu）基础上继续开发与维护，由 **TAO MUSE** 增补功能并持续迭代。
 
 > 原作者 Liko 开发了优秀的原始版本，在此致谢。本项目已更名为「BC工具箱」并持续迭代。
 
