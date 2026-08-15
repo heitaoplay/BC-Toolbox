@@ -2,7 +2,7 @@
 // @name         BC工具箱
 // @name:zh      BC工具箱
 // @namespace    https://github.com/heitaoplay/BC-Toolbox
-// @version      3.2.0
+// @version      3.2.1
 // @description  BC 多功能工具箱 - BC工具箱 (R121 Compatible) + UI 面板 + 角色选择器 + Canvas SVG 图标 + 拖拽排序 + 主题自定义 + 自动解绑女仆
 // @author       heitaoplay
 // @include      /^https:\/\/(www\.)?bondage(projects\.elementfx|-(europe|asia))\.com\/.*/
@@ -30,7 +30,7 @@
     }
     window.__BCToolboxLoaded__ = true;
     let modApi = null;
-    const modversion = "3.2.0";
+    const modversion = "3.2.1";
 
     const rpBtnX    = 955;
     const rpBtnY    = 855;
@@ -1642,6 +1642,25 @@
     }
     let toolPanelPos = loadToolPanelPos();
 
+    // 面板常显在视口内：默认按钮在右上角，面板宽 248px，
+    // 若直接按按钮坐标定位会越过右边缘 → 显示前统一夹回安全区。
+    const TOOL_PANEL_W = 248;
+    const TOOL_PANEL_M = 8;
+    function clampPanelOnScreen() {
+        const vw = (typeof window !== 'undefined' && window.innerWidth)  ? window.innerWidth  : 1920;
+        const vh = (typeof window !== 'undefined' && window.innerHeight) ? window.innerHeight : 1080;
+        if (typeof toolPanelPos.x !== 'number') toolPanelPos.x = TOOL_PANEL_M;
+        if (typeof toolPanelPos.y !== 'number') toolPanelPos.y = TOOL_PANEL_M;
+        // 水平：保证整块面板留在视口内（优先贴右、必要时贴左）
+        if (toolPanelPos.x + TOOL_PANEL_W > vw - TOOL_PANEL_M) {
+            toolPanelPos.x = Math.max(TOOL_PANEL_M, vw - TOOL_PANEL_W - TOOL_PANEL_M);
+        }
+        if (toolPanelPos.x < TOOL_PANEL_M) toolPanelPos.x = TOOL_PANEL_M;
+        // 垂直：保证顶部与底部都在视口内
+        if (toolPanelPos.y < TOOL_PANEL_M) toolPanelPos.y = TOOL_PANEL_M;
+        if (toolPanelPos.y > vh - 140) toolPanelPos.y = Math.max(TOOL_PANEL_M, vh - 140);
+    }
+
     function buildToolPanel() {
         if (toolPanelEl) return;
         // 清理旧面板：热注入 / 多实例加载 / 油猴更新时可能残留多个 #lt-quick-panel，
@@ -2093,6 +2112,12 @@
 
     function showToolPanel() {
         if (!toolPanelEl) buildToolPanel();
+        clampPanelOnScreen();
+        if (toolPanelEl) {
+            toolPanelEl.style.left = toolPanelPos.x + 'px';
+            toolPanelEl.style.top  = toolPanelPos.y + 'px';
+        }
+        saveToolPanelPos();
         toolPanelVisible = true;
         if (toolPanelEl) {
             requestAnimationFrame(function() {
