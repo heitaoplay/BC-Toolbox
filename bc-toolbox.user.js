@@ -2,7 +2,7 @@
 // @name         BC工具箱
 // @name:zh      BC工具箱
 // @namespace    https://github.com/heitaoplay/BC-Toolbox
-// @version      3.2.2
+// @version      3.2.3
 // @description  BC 多功能工具箱 - BC工具箱 (R121 Compatible) + UI 面板 + 角色选择器 + Canvas SVG 图标 + 拖拽排序 + 主题自定义 + 自动解绑女仆
 // @author       heitaoplay
 // @include      /^https:\/\/(www\.)?bondage(projects\.elementfx|-(europe|asia))\.com\/.*/
@@ -30,7 +30,7 @@
     }
     window.__BCToolboxLoaded__ = true;
     let modApi = null;
-    const modversion = "3.2.2";
+    const modversion = "3.2.3";
 
     const rpBtnX    = 955;
     const rpBtnY    = 855;
@@ -1591,9 +1591,9 @@
             const target = await pickTarget('选择要解除束缚的目标');
             if (target) free(getNickname(target));
         }},
-        { id: 'lock',      icon: SVG.lock,      label: '上锁',    title: '为束缚添加锁', category: 'restraint', fn: async function() {
-            const target = await pickTarget('选择要上锁的目标');
-            if (!target) return;
+        { id: 'lock',      icon: SVG.lock,      label: '上锁',    title: '为束缚添加锁（可多选目标）', category: 'restraint', fn: async function() {
+            const targets = await pickTargets('选择要上锁的目标（可多选）');
+            if (!targets.length) return;
             const itemMiscGroup = AssetGroupGet(Player.AssetFamily, "ItemMisc");
             if (!itemMiscGroup) { ChatRoomSendLocal('无法获取锁类型列表'); return; }
             const validLocks = itemMiscGroup.Asset.filter(a => a.IsLock).map(a => ({ Name: a.Name, Description: a.Description || a.Name }));
@@ -1603,15 +1603,17 @@
             if (!selectedLock) return;
             const lock = validLocks.find(l => l.Description === selectedLock);
             if (!lock) return;
-            fullLock(getNickname(target) + ' ' + lock.Name);
+            await batchApplyToTargets('上锁', targets, function(t) { fullLock(getNickname(t) + ' ' + lock.Name); });
         }},
-        { id: 'freetotal', icon: SVG.freetotal, label: '全解除',  title: '移除所有束缚', category: 'restraint', fn: async function() {
-            const target = await pickTarget('选择要全部解除的目标');
-            if (target) freetotal(getNickname(target));
+        { id: 'freetotal', icon: SVG.freetotal, label: '全解除',  title: '移除所有束缚（可多选目标）', category: 'restraint', fn: async function() {
+            const targets = await pickTargets('选择要全部解除的目标（可多选）');
+            if (!targets.length) return;
+            await batchApplyToTargets('全解除', targets, function(t) { freetotal(getNickname(t)); });
         }},
-        { id: 'unlock',    icon: SVG.unlock,    label: '全解锁',  title: '移除所有锁（跳过主人/恋人锁）', category: 'restraint', fn: async function() {
-            const target = await pickTarget('选择要解锁的目标');
-            if (target) fullUnlock(getNickname(target));
+        { id: 'unlock',    icon: SVG.unlock,    label: '全解锁',  title: '移除所有锁（跳过主人/恋人锁，可多选目标）', category: 'restraint', fn: async function() {
+            const targets = await pickTargets('选择要解锁的目标（可多选）');
+            if (!targets.length) return;
+            await batchApplyToTargets('全解锁', targets, function(t) { fullUnlock(getNickname(t)); });
         }},
         { id: 'password',  icon: SVG.password,  label: '锁密码',  title: '查看当前锁的密码', category: 'restraint', fn: function() { execChatCommand('/infolock'); } },
         { id: 'struggle',  icon: SVG.struggle,  label: '挣扎',    title: 'LSCG 挣脱指令', category: 'magic', fn: function() { execChatCommand('/lscg escape'); } },
@@ -2424,6 +2426,93 @@
             return CurrentCharacter;
         }
         return await requestCharacter(promptText);
+    }
+
+    /* ── 多选角色选择器（批量操作入口） ── */
+    // 返回选中的 Character 对象数组；空房间直接提示并返回 []；取消/ESC 返回 []。
+    function pickTargets(promptText) {
+        const targets = ChatRoomCharacter || [];
+        if (!targets.length) {
+            ChatRoomSendLocal(isZh() ? '房间内没有玩家' : 'No players in room');
+            return Promise.resolve([]);
+        }
+        // 正与某人交互时预选中该角色，方便"单目标快速确认"场景
+        const preSel = (typeof CurrentCharacter !== 'undefined' && CurrentCharacter) ? CurrentCharacter.MemberNumber : null;
+        return new Promise(function(resolve) {
+            const listEl = document.createElement('div');
+            listEl.className = 'lt-btn-list';
+            const selected = new Set();
+            if (preSel != null) selected.add(preSel);
+
+            targets.forEach(function(target) {
+                const el = document.createElement('button');
+                el.className = 'lt-list-btn' + (preSel === target.MemberNumber ? ' selected' : '');
+                const textSpan = document.createElement('span');
+                textSpan.style.fontFamily = '"Apple Color Emoji","Segoe UI Emoji","Noto Color Emoji","Twemoji Mozilla","EmojiOne Color","Android Emoji",sans-serif';
+                textSpan.textContent = getNickname(target) + ' (#' + target.MemberNumber + ')';
+                el.appendChild(textSpan);
+                const check = document.createElement('span');
+                check.className = 'lt-check';
+                check.innerHTML = '<svg viewBox="0 0 24 24" fill="currentColor" width="14" height="14"><circle cx="12" cy="12" r="7"/></svg>';
+                el.appendChild(check);
+                el.onclick = function() {
+                    if (selected.has(target.MemberNumber)) { selected.delete(target.MemberNumber); el.classList.remove('selected'); }
+                    else { selected.add(target.MemberNumber); el.classList.add('selected'); }
+                    if (confirmBtn) confirmBtn.textContent = t('confirm') + (selected.size ? ' (' + selected.size + ')' : '');
+                };
+                listEl.appendChild(el);
+            });
+
+            const footerEl = document.createElement('div');
+            footerEl.style.cssText = 'display:flex;gap:8px;width:100%;';
+            const cancelBtn = document.createElement('button');
+            cancelBtn.className = 'lt-btn lt-btn-secondary';
+            cancelBtn.textContent = t('cancel');
+            cancelBtn.onclick = function() { panel.remove(); resolve([]); };
+            const confirmBtn = document.createElement('button');
+            confirmBtn.className = 'lt-btn lt-btn-primary';
+            confirmBtn.textContent = t('confirm') + (selected.size ? ' (' + selected.size + ')' : '');
+            confirmBtn.onclick = function() {
+                panel.remove();
+                resolve(targets.filter(function(t) { return selected.has(t.MemberNumber); }));
+            };
+            footerEl.appendChild(cancelBtn);
+            footerEl.appendChild(confirmBtn);
+
+            const panel = createPanel(promptText, listEl, footerEl);
+            const onKey = function(e) { if (e.key === 'Escape') { panel.remove(); resolve([]); } };
+            document.addEventListener('keydown', onKey);
+            const keyObs = new MutationObserver(function() {
+                if (!document.body.contains(panel)) { document.removeEventListener('keydown', onKey); keyObs.disconnect(); }
+            });
+            keyObs.observe(document.body, { childList: true, subtree: true });
+        });
+    }
+
+    /* ── 批量执行包装：对多个目标复用单目标底层函数，统一处理空选择/部分失败 ── */
+    // op(target) 为针对单个目标的底层操作（如 freetotal/fullUnlock/fullLock），保持原样不修改。
+    async function batchApplyToTargets(label, targets, op) {
+        if (!targets || !targets.length) {
+            ChatRoomSendLocal(isZh() ? '未选择任何目标' : 'No target selected');
+            return;
+        }
+        let ok = 0, skip = 0;
+        targets.forEach(function(target) {
+            if (!hasBCItemPermission(target)) {
+                ChatRoomSendLocal((t('noPermission') || (isZh() ? '无权限' : 'No permission')) + ' ' + getNickname(target) + '。');
+                skip++; return;
+            }
+            if (!(ChatRoomCharacter || []).some(function(c) { return c.MemberNumber === target.MemberNumber; })) {
+                ChatRoomSendLocal(getNickname(target) + ' ' + (t('notInRoom') || (isZh() ? '不在房间' : 'not in room')) + '！');
+                skip++; return;
+            }
+            try { op(target); ok++; }
+            catch (e) { console.error('🐈‍⬛ [BC] ❌ batch ' + label + ' 错误:', e && e.message); skip++; }
+        });
+        const summary = (isZh() ? (label + '完成：对 ' + ok + ' 个目标生效') : (label + ' done: applied to ' + ok + ' target(s)'))
+            + (skip ? (isZh() ? '，' + skip + ' 个跳过（无权限/不在房间）' : ', ' + skip + ' skipped (no permission / not in room)') : '');
+        if (typeof ChatRoomSendLocalStyled === 'function') ChatRoomSendLocalStyled(summary, 4000);
+        else ChatRoomSendLocal(summary);
     }
 
     function requestCharacter(title) {
