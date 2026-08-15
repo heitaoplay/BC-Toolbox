@@ -2,7 +2,7 @@
 // @name         BC工具箱
 // @name:zh      BC工具箱
 // @namespace    https://github.com/heitaoplay/BC-Toolbox
-// @version      3.1.0
+// @version      3.1.1
 // @description  BC 多功能工具箱 - BC工具箱 (R121 Compatible) + UI 面板 + 角色选择器 + Canvas SVG 图标 + 拖拽排序 + 主题自定义 + 自动解绑女仆
 // @author       heitaoplay
 // @include      /^https:\/\/(www\.)?bondage(projects\.elementfx|-(europe|asia))\.com\/.*/
@@ -30,7 +30,7 @@
     }
     window.__BCToolboxLoaded__ = true;
     let modApi = null;
-    const modversion = "3.1.0";
+    const modversion = "3.1.1";
 
     const rpBtnX    = 955;
     const rpBtnY    = 855;
@@ -1765,73 +1765,79 @@
         // 唤醒二级菜单：睡眠（/lscg wake）/ 催眠（/lscg unzonk），差异化视觉
         var wakePop = null;
         var wakePopClose = null;
-        function openWakeMenu() {
-            // 已打开则切换关闭（复用同一引用，确保监听能正确移除）
+        function closeWakePop() {
             if (wakePop) {
-                wakePop.remove();
-                if (wakePopClose) document.removeEventListener('mousedown', wakePopClose, true);
-                wakePop = null; wakePopClose = null;
-                return;
+                try { wakePop.remove(); } catch (_) {}
+                wakePop = null;
             }
-            var anchor = document.querySelector('.ltq-action[data-id="wake"]') || actionGridEl;
-            var pop = document.createElement('div');
-            pop.className = 'lt-wake-pop';
+            if (wakePopClose) {
+                try { document.removeEventListener('mousedown', wakePopClose, true); } catch (_) {}
+                wakePopClose = null;
+            }
+        }
+        function openWakeMenu() {
+            try {
+                // 已打开则切换关闭
+                if (wakePop) { closeWakePop(); return; }
+                var anchor = document.querySelector('.ltq-action[data-id="wake"]') || actionGridEl;
+                if (!anchor) { console.error('[BC] openWakeMenu: anchor not found'); return; }
+                var pop = document.createElement('div');
+                pop.className = 'lt-wake-pop';
 
-            var items = [
-                { label: '睡眠', sub: '/lscg wake',   icon: SVG.wakeSleep, cmd: 'wake',   cls: 'lt-wake-sleep' },
-                { label: '催眠', sub: '/lscg unzonk', icon: SVG.wakeHypno, cmd: 'unzonk', cls: 'lt-wake-hypno' }
-            ];
-            items.forEach(function(it) {
-                var item = document.createElement('div');
-                item.className = 'lt-wake-item ' + it.cls;
+                var items = [
+                    { label: '睡眠', sub: '/lscg wake',   icon: SVG.wakeSleep, cmd: 'wake',   cls: 'lt-wake-sleep' },
+                    { label: '催眠', sub: '/lscg unzonk', icon: SVG.wakeHypno, cmd: 'unzonk', cls: 'lt-wake-hypno' }
+                ];
+                items.forEach(function(it) {
+                    var item = document.createElement('div');
+                    item.className = 'lt-wake-item ' + it.cls;
 
-                var ic = document.createElement('span');
-                ic.className = 'lt-wake-ic';
-                ic.innerHTML = it.icon;
+                    var ic = document.createElement('span');
+                    ic.className = 'lt-wake-ic';
+                    ic.innerHTML = it.icon;
 
-                var lbl = document.createElement('span');
-                lbl.className = 'lt-wake-label';
-                lbl.textContent = it.label;
+                    var lbl = document.createElement('span');
+                    lbl.className = 'lt-wake-label';
+                    lbl.textContent = it.label;
 
-                var sub = document.createElement('span');
-                sub.className = 'lt-wake-sub';
-                sub.textContent = it.sub;
+                    var sub = document.createElement('span');
+                    sub.className = 'lt-wake-sub';
+                    sub.textContent = it.sub;
 
-                item.appendChild(ic);
-                item.appendChild(lbl);
-                item.appendChild(sub);
+                    item.appendChild(ic);
+                    item.appendChild(lbl);
+                    item.appendChild(sub);
 
-                item.addEventListener('click', function(ev) {
-                    ev.stopPropagation();
-                    ltSendLscg(it.cmd);
-                    pop.remove();
-                    document.removeEventListener('mousedown', onDown, true);
-                    wakePop = null; wakePopClose = null;
+                    item.addEventListener('click', function(ev) {
+                        ev.stopPropagation();
+                        ltSendLscg(it.cmd);
+                        closeWakePop();
+                    });
+                    pop.appendChild(item);
                 });
-                pop.appendChild(item);
-            });
 
-            document.body.appendChild(pop);
+                document.body.appendChild(pop);
 
-            // 定位到唤醒按钮下方，超出视口则翻到上方
-            var r = anchor.getBoundingClientRect();
-            pop.style.width = Math.max(r.width, 170) + 'px';
-            pop.style.left = r.left + 'px';
-            var ph = pop.offsetHeight;
-            var top = r.bottom + 6;
-            if (top + ph > window.innerHeight) top = r.top - ph - 6;
-            pop.style.top = top + 'px';
+                // 定位到唤醒按钮下方，超出视口则翻到上方
+                var r = anchor.getBoundingClientRect();
+                pop.style.width = Math.max(r.width, 170) + 'px';
+                pop.style.left = r.left + 'px';
+                var ph = pop.offsetHeight;
+                var top = r.bottom + 6;
+                if (top + ph > window.innerHeight) top = r.top - ph - 6;
+                pop.style.top = top + 'px';
 
-            function onDown(e) {
-                if (!pop.contains(e.target) && !anchor.contains(e.target)) {
-                    pop.remove();
-                    document.removeEventListener('mousedown', onDown, true);
-                    wakePop = null; wakePopClose = null;
+                function onDown(e) {
+                    if (!pop.contains(e.target) && !anchor.contains(e.target)) {
+                        closeWakePop();
+                    }
                 }
+                wakePop = pop;
+                wakePopClose = onDown;
+                setTimeout(function() { if (wakePopClose === onDown) document.addEventListener('mousedown', onDown, true); }, 0);
+            } catch (err) {
+                console.error('[BC] openWakeMenu error:', err);
             }
-            wakePop = pop;
-            wakePopClose = onDown;
-            setTimeout(function() { document.addEventListener('mousedown', onDown, true); }, 0);
         }
 
         function updateToggleState(ref, key) {
@@ -2013,8 +2019,7 @@
         toolPanelVisible = false;
         if (toolPanelEl) toolPanelEl.classList.remove('show');
         document.querySelectorAll('.lt-lscg-pop').forEach(function(e) { e.remove(); });
-        document.querySelectorAll('.lt-wake-pop').forEach(function(e) { e.remove(); });
-        wakePop = null; wakePopClose = null;
+        closeWakePop();
     }
 
     function toggleToolPanel() {
