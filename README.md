@@ -19,26 +19,31 @@ BC 多功能工具箱油猴脚本。在原 **Liko - Tool**（作者 Liko / Likol
 
 ## 安装
 
-### 方式一：直接安装（推荐，支持自动更新）
+### 方式一：Loader 模式（推荐，仓库推送即时生效）
 
-已安装 Tampermonkey 或 Violentmonkey 后，点击下面的安装链接即可：
+安装下面这个很小的 Loader 脚本。它每次进入游戏时都会从 Git 仓库**实时拉取最新版**主脚本并执行，因此只要你往仓库推送新版本，玩家下次刷新页面就能立即生效，不需要等油猴的定时更新。
+
+**安装链接：** https://raw.githubusercontent.com/heitaoplay/BC-Toolbox/main/bc-toolbox-loader.user.js
+
+> 该 Loader 自带 `@updateURL` / `@downloadURL`，油猴会保持 Loader 自身为最新；
+> 而真正的功能代码（`bc-toolbox.user.js`）由 Loader 在每次页面加载时动态拉取。
+
+### 方式二：直接安装（传统方式，依赖油猴自动更新）
+
+如果你更习惯传统安装，也可以直接安装主脚本。油猴会按 `@updateURL` / `@downloadURL` 检测 `@version` 变化并自动更新。
 
 **安装链接：** https://raw.githubusercontent.com/heitaoplay/BC-Toolbox/main/bc-toolbox.user.js
 
-> 该链接直接指向 Git 仓库中的脚本文件。脚本头部已配置 `@updateURL` 与 `@downloadURL` 指向同一地址，
-> 因此当你在 Git 仓库推送新版本后，油猴会在检测到版本号（`@version`）变化时**自动更新**，无需手动重装。
+### 方式三：CDN 镜像
 
-### 方式二：CDN 镜像（更稳定）
-
-若 GitHub raw 访问不稳定，可使用 jsDelivr 镜像安装，同样跟随仓库自动更新：
+若 GitHub raw 访问不稳定，Loader 内部会自动回退到 jsDelivr 镜像；直接安装模式也可以使用：
 
 https://cdn.jsdelivr.net/gh/heitaoplay/BC-Toolbox@main/bc-toolbox.user.js
 
 ### 手动安装
 
-1. 下载仓库中的 `bc-toolbox.user.js`
-2. 用编辑器打开，确认头部 `@updateURL` / `@downloadURL` 指向本仓库 raw 地址
-3. 将文件拖入 Tampermonkey 管理面板完成安装
+1. 下载仓库中的 `bc-toolbox-loader.user.js`（推荐）或 `bc-toolbox.user.js`
+2. 将文件拖入 Tampermonkey 管理面板完成安装
 
 ## 聊天命令
 
