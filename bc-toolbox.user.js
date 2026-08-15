@@ -2,7 +2,7 @@
 // @name         BC工具箱
 // @name:zh      BC工具箱
 // @namespace    https://github.com/heitaoplay/BC-Toolbox
-// @version      3.2.1
+// @version      3.2.2
 // @description  BC 多功能工具箱 - BC工具箱 (R121 Compatible) + UI 面板 + 角色选择器 + Canvas SVG 图标 + 拖拽排序 + 主题自定义 + 自动解绑女仆
 // @author       heitaoplay
 // @include      /^https:\/\/(www\.)?bondage(projects\.elementfx|-(europe|asia))\.com\/.*/
@@ -30,7 +30,7 @@
     }
     window.__BCToolboxLoaded__ = true;
     let modApi = null;
-    const modversion = "3.2.1";
+    const modversion = "3.2.2";
 
     const rpBtnX    = 955;
     const rpBtnY    = 855;
@@ -45,17 +45,24 @@
     const STORAGE_TOOL_BTN   = 'bcToolbox_float_btn';
     const STORAGE_TOOL_PANEL = 'bcToolbox_ui_panel';
 
-    // 浮动按钮位置（角落常显 + 拖拽记忆）
+    // 浮动按钮位置（屏幕中央默认 + 拖拽记忆）
     function loadToolBtnPos() {
         try {
             const s = localStorage.getItem(STORAGE_TOOL_BTN);
             if (s) {
                 const p = JSON.parse(s);
-                if (typeof p.x === 'number' && typeof p.y === 'number') return { x: p.x, y: p.y };
+                if (typeof p.x === 'number' && typeof p.y === 'number') {
+                    // 旧版默认右上角 (w-60,15) 会被 BC 聊天室右侧栏遮挡，导致按钮不可见。
+                    // 用户若从未拖动（恰为旧默认坐标），重置回屏幕中央。
+                    const w = (typeof CommonScreenWidth !== 'undefined' && CommonScreenWidth) ? CommonScreenWidth : 1920;
+                    if (p.x === w - TOOL_BTN_W - 15 && p.y === 15) {
+                        return { x: TOOL_BTN_X, y: TOOL_BTN_Y };
+                    }
+                    return { x: p.x, y: p.y };
+                }
             }
         } catch (_) {}
-        const w = (typeof CommonScreenWidth !== 'undefined' && CommonScreenWidth) ? CommonScreenWidth : 1920;
-        return { x: w - TOOL_BTN_W - 15, y: 15 };
+        return { x: TOOL_BTN_X, y: TOOL_BTN_Y };
     }
     function saveToolBtnPos() {
         try { localStorage.setItem(STORAGE_TOOL_BTN, JSON.stringify(toolBtnPos)); } catch (_) {}
