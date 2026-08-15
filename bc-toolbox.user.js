@@ -2,7 +2,7 @@
 // @name         BC工具箱
 // @name:zh      BC工具箱
 // @namespace    https://github.com/heitaoplay/BC-Toolbox
-// @version      3.2.3
+// @version      3.2.4
 // @description  BC 多功能工具箱 - BC工具箱 (R121 Compatible) + UI 面板 + 角色选择器 + Canvas SVG 图标 + 拖拽排序 + 主题自定义 + 自动解绑女仆
 // @author       heitaoplay
 // @include      /^https:\/\/(www\.)?bondage(projects\.elementfx|-(europe|asia))\.com\/.*/
@@ -30,7 +30,7 @@
     }
     window.__BCToolboxLoaded__ = true;
     let modApi = null;
-    const modversion = "3.2.3";
+    const modversion = "3.2.4";
 
     const rpBtnX    = 955;
     const rpBtnY    = 855;
@@ -1273,6 +1273,32 @@
         }
     }
 
+    // ── 自带彩色 Toast（成功绿 / 失败红 / 信息中性），单条替换式、自动消失 ──
+    // ltToastSuppressed 用于批量模式：循环内抑制单目标 toast，结束由 batchApplyToTargets 统一汇报。
+    var ltToastSuppressed = false;
+    function ltToast(msg, type) {
+        if (!document || !document.body) return;
+        type = type || 'info';
+        let host = document.getElementById('lt-toast-host');
+        if (!host) {
+            host = document.createElement('div');
+            host.id = 'lt-toast-host';
+            document.body.appendChild(host);
+        }
+        host.innerHTML = '';
+        const el = document.createElement('div');
+        el.className = 'lt-toast lt-toast-' + type;
+        el.textContent = msg;
+        host.appendChild(el);
+        const raf = (typeof requestAnimationFrame === 'function') ? requestAnimationFrame : function (fn) { setTimeout(fn, 0); };
+        raf(function () { el.classList.add('show'); });
+        clearTimeout(el._ltTimer);
+        el._ltTimer = setTimeout(function () {
+            el.classList.remove('show');
+            setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 320);
+        }, 2600);
+    }
+
     function hasBCItemPermission(target) {
         if (Player.BCToolbox?.bypassActivities) return true;
         return typeof ServerChatRoomGetAllowItem === "function"
@@ -1387,6 +1413,7 @@
             // ── Drag-over state ──
             "#lt-quick-panel .ltq-action.ltq-drag-over{border-color:var(--lt-accent);border-style:dashed;background:var(--lt-surface-hover);transform:scale(1.04);box-shadow:0 0 0 2px var(--lt-accent-glow),0 4px 16px var(--lt-accent-glow);}",
             "#lt-quick-panel .ltq-action.ltq-dragging{opacity:0.25;}",
+            "#lt-quick-panel .ltq-action.acting{transform:scale(0.9);border-color:var(--lt-accent);box-shadow:inset 0 1px 0 rgba(255,255,255,0.22),0 0 0 2px var(--lt-accent),0 0 16px var(--lt-accent-glow);}",
 
             // ── Section Label ──
             "#lt-quick-panel .ltq-section{font-size:10px;font-weight:600;color:var(--lt-text-faint,#5a4a7a);text-transform:uppercase;letter-spacing:0.12em;display:flex;align-items:center;gap:8px;margin:6px 2px 3px;}",
@@ -1490,6 +1517,14 @@
             ".lt-rm-tag{font-size:8px;font-weight:700;text-transform:uppercase;letter-spacing:0.08em;opacity:0.6;padding:1px 3px;border-radius:3px;background:rgba(255,255,255,0.08);}",
             ".lt-rm-del{cursor:pointer;font-size:14px;line-height:1;opacity:0.5;transition:opacity 0.15s;padding:0 0 0 2px;}",
             ".lt-rm-del:hover{opacity:1;color:var(--lt-accent);}",
+
+            // ═══ 自带彩色 Toast（成功绿 / 失败红 / 信息中性）═════════════════════
+            "#lt-toast-host{position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:2147483647;display:flex;flex-direction:column;gap:8px;align-items:center;pointer-events:none;}",
+            "#lt-toast-host .lt-toast{pointer-events:auto;max-width:440px;padding:10px 18px;border-radius:11px;font-family:'Noto Sans TC',-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif;font-size:13px;font-weight:600;color:#fff;letter-spacing:0.01em;opacity:0;transform:translateY(-12px) scale(0.96);transition:opacity 0.26s cubic-bezier(0.16,1,0.3,1),transform 0.26s cubic-bezier(0.16,1,0.3,1);backdrop-filter:blur(14px);-webkit-backdrop-filter:blur(14px);box-shadow:0 8px 28px rgba(0,0,0,0.45),inset 0 1px 0 rgba(255,255,255,0.2);}",
+            "#lt-toast-host .lt-toast.show{opacity:1;transform:translateY(0) scale(1);}",
+            "#lt-toast-host .lt-toast-success{background:linear-gradient(180deg,rgba(34,168,94,0.95),rgba(20,120,64,0.95));border:1px solid rgba(130,255,180,0.4);box-shadow:0 8px 28px rgba(0,0,0,0.45),0 0 20px rgba(40,210,120,0.45),inset 0 1px 0 rgba(255,255,255,0.22);}",
+            "#lt-toast-host .lt-toast-error{background:linear-gradient(180deg,rgba(206,52,62,0.96),rgba(150,28,38,0.96));border:1px solid rgba(255,150,160,0.45);box-shadow:0 8px 28px rgba(0,0,0,0.45),0 0 20px rgba(226,62,72,0.5),inset 0 1px 0 rgba(255,255,255,0.22);}",
+            "#lt-toast-host .lt-toast-info{background:linear-gradient(180deg,rgba(62,74,116,0.96),rgba(40,48,82,0.96));border:1px solid rgba(150,175,235,0.4);box-shadow:0 8px 28px rgba(0,0,0,0.45),0 0 20px rgba(100,135,215,0.4),inset 0 1px 0 rgba(255,255,255,0.22);}",
         ].join("\n");
         document.head.appendChild(s);
     }
@@ -1545,6 +1580,7 @@
                 item.addEventListener('click', function(ev) {
                     ev.stopPropagation();
                     ltSendLscg(it.cmd);
+                    ltToast((isZh() ? '已发送 · ' : 'Sent · ') + it.label, 'success');
                     closeWakePop();
                 });
                 pop.appendChild(item);
@@ -1616,7 +1652,7 @@
             await batchApplyToTargets('全解锁', targets, function(t) { fullUnlock(getNickname(t)); });
         }},
         { id: 'password',  icon: SVG.password,  label: '锁密码',  title: '查看当前锁的密码', category: 'restraint', fn: function() { execChatCommand('/infolock'); } },
-        { id: 'struggle',  icon: SVG.struggle,  label: '挣扎',    title: 'LSCG 挣脱指令', category: 'magic', fn: function() { execChatCommand('/lscg escape'); } },
+        { id: 'struggle',  icon: SVG.struggle,  label: '挣扎',    title: 'LSCG 挣脱指令', category: 'magic', fn: function() { execChatCommand('/lscg escape'); ltToast(isZh() ? '已发送挣扎指令' : 'Struggle command sent', 'info'); } },
         { id: 'wake',      icon: SVG.wake,      label: '唤醒',    title: 'LSCG 唤醒：睡眠 / 催眠', category: 'magic', fn: function() { openWakeMenu(); } },
         { id: 'enhance',   icon: SVG.enhance,   label: '增强',    title: '获取道具/金钱/技能', category: 'boost', fn: function() { getEverything(); } },
         { id: 'bcxcmd',    icon: SVG.bcxcmd,    label: 'BCX指令', title: '触发 BCX 指令（表情/姿态/场所/文本等）', category: 'craft', fn: async function() {
@@ -2036,6 +2072,8 @@
                     btn.dataset.dragged = '';
                     return;
                 }
+                btn.classList.add('acting');
+                setTimeout(function() { btn.classList.remove('acting'); }, 320);
                 a.fn();
             });
 
@@ -2497,22 +2535,27 @@
             return;
         }
         let ok = 0, skip = 0;
-        targets.forEach(function(target) {
-            if (!hasBCItemPermission(target)) {
-                ChatRoomSendLocal((t('noPermission') || (isZh() ? '无权限' : 'No permission')) + ' ' + getNickname(target) + '。');
-                skip++; return;
-            }
-            if (!(ChatRoomCharacter || []).some(function(c) { return c.MemberNumber === target.MemberNumber; })) {
-                ChatRoomSendLocal(getNickname(target) + ' ' + (t('notInRoom') || (isZh() ? '不在房间' : 'not in room')) + '！');
-                skip++; return;
-            }
-            try { op(target); ok++; }
-            catch (e) { console.error('🐈‍⬛ [BC] ❌ batch ' + label + ' 错误:', e && e.message); skip++; }
-        });
+        ltToastSuppressed = true;
+        try {
+            targets.forEach(function(target) {
+                if (!hasBCItemPermission(target)) {
+                    ChatRoomSendLocal((t('noPermission') || (isZh() ? '无权限' : 'No permission')) + ' ' + getNickname(target) + '。');
+                    skip++; return;
+                }
+                if (!(ChatRoomCharacter || []).some(function(c) { return c.MemberNumber === target.MemberNumber; })) {
+                    ChatRoomSendLocal(getNickname(target) + ' ' + (t('notInRoom') || (isZh() ? '不在房间' : 'not in room')) + '！');
+                    skip++; return;
+                }
+                try { op(target); ok++; }
+                catch (e) { console.error('🐈‍⬛ [BC] ❌ batch ' + label + ' 错误:', e && e.message); skip++; }
+            });
+        } finally {
+            ltToastSuppressed = false;
+        }
         const summary = (isZh() ? (label + '完成：对 ' + ok + ' 个目标生效') : (label + ' done: applied to ' + ok + ' target(s)'))
             + (skip ? (isZh() ? '，' + skip + ' 个跳过（无权限/不在房间）' : ', ' + skip + ' skipped (no permission / not in room)') : '');
-        if (typeof ChatRoomSendLocalStyled === 'function') ChatRoomSendLocalStyled(summary, 4000);
-        else ChatRoomSendLocal(summary);
+        const sumType = ok === 0 ? 'error' : (skip === 0 ? 'success' : 'info');
+        ltToast(summary, sumType);
     }
 
     function requestCharacter(title) {
@@ -2965,18 +3008,19 @@
     // ──────────────────────────────────────────
     function freetotal(args) {
         const target = getPlayer(args.trim());
-        if (!hasBCItemPermission(target)) { ChatRoomSendLocal(t('noPermission') + " " + getNickname(target) + "。"); return true; }
+        if (!hasBCItemPermission(target)) { ChatRoomSendLocal(t('noPermission') + " " + getNickname(target) + "。"); if (!ltToastSuppressed) ltToast((isZh() ? "无权限: " : "No permission: ") + getNickname(target), 'error'); return true; }
         try {
             CharacterReleaseTotal(target);
             ChatRoomCharacterUpdate(target);
             chatSendCustomAction(getNickname(Player) + " " + t('freetotalDone') + " " + getNickname(target) + "！");
-        } catch (e) { console.error("🐈‍⬛ [BC] ❌ freetotal 错误:", e.message); }
+            if (!ltToastSuppressed) ltToast((isZh() ? "已全解除 " : "Released all on ") + getNickname(target), 'success');
+        } catch (e) { console.error("🐈‍⬛ [BC] ❌ freetotal 错误:", e.message); if (!ltToastSuppressed) ltToast((isZh() ? "操作失败: " : "Failed: ") + e.message, 'error'); }
         return true;
     }
 
     async function free(args) {
         const target = getPlayer(args.trim());
-        if (!hasBCItemPermission(target)) { ChatRoomSendLocal(t('noPermission') + " " + getNickname(target) + "。"); return true; }
+        if (!hasBCItemPermission(target)) { ChatRoomSendLocal(t('noPermission') + " " + getNickname(target) + "。"); if (!ltToastSuppressed) ltToast((isZh() ? "无权限: " : "No permission: ") + getNickname(target), 'error'); return true; }
         const restraints = [];
         for (const group of AssetGroup) {
             if (group.Name.startsWith("Item")) {
@@ -2992,7 +3036,7 @@
                 }
             }
         }
-        if (!restraints.length) { ChatRoomSendLocal(getNickname(target) + " " + t('freeNoItem') + "！"); return true; }
+        if (!restraints.length) { ChatRoomSendLocal(getNickname(target) + " " + t('freeNoItem') + "！"); if (!ltToastSuppressed) ltToast(getNickname(target) + " " + (isZh() ? "没有可解除的束缚" : "has no restraints"), 'info'); return true; }
         const selected = await requestButtons(t('freeTitle') + " — " + getNickname(target), restraints, true);
         if (!selected.length) return true;
         try {
@@ -3002,23 +3046,25 @@
             });
             ChatRoomCharacterUpdate(target);
             chatSendCustomAction(getNickname(Player) + " " + t('freeDone') + " " + getNickname(target) + " 的 " + selected.join("、"));
-        } catch (e) { console.error("🐈‍⬛ [BC] ❌ free 错误:", e.message); }
+            if (!ltToastSuppressed) ltToast((isZh() ? "已解除 " : "Removed ") + selected.length + " " + (isZh() ? "件束缚 (" : "item(s) from (") + getNickname(target) + ")", 'success');
+        } catch (e) { console.error("🐈‍⬛ [BC] ❌ free 错误:", e.message); if (!ltToastSuppressed) ltToast((isZh() ? "操作失败: " : "Failed: ") + e.message, 'error'); }
         return true;
     }
 
     async function bcxImport(args) {
         const target = getPlayer(args.trim());
-        if (!hasBCItemPermission(target)) { ChatRoomSendLocal(t('noPermission') + " " + getNickname(target) + "。"); return true; }
+        if (!hasBCItemPermission(target)) { ChatRoomSendLocal(t('noPermission') + " " + getNickname(target) + "。"); if (!ltToastSuppressed) ltToast((isZh() ? "无权限: " : "No permission: ") + getNickname(target), 'error'); return true; }
         let bcxCode;
         try { bcxCode = await navigator.clipboard.readText(); }
-        catch (e) { ChatRoomSendLocal(t('clipboardFail')); return true; }
+        catch (e) { ChatRoomSendLocal(t('clipboardFail')); if (!ltToastSuppressed) ltToast(t('clipboardFail'), 'error'); return true; }
         try {
             const appearance = JSON.parse(LZString.decompressFromBase64(bcxCode));
             if (!Array.isArray(appearance)) throw new Error("invalid");
             ServerAppearanceLoadFromBundle(target, target.AssetFamily, appearance, Player.MemberNumber);
             ChatRoomCharacterUpdate(target);
             chatSendCustomAction(getNickname(Player) + " " + t('bcxDone') + " " + getNickname(target) + "！");
-        } catch (e) { ChatRoomSendLocal(t('bcxInvalid')); }
+            if (!ltToastSuppressed) ltToast((isZh() ? "已导入外观到 " : "Imported appearance to ") + getNickname(target), 'success');
+        } catch (e) { ChatRoomSendLocal(t('bcxInvalid')); if (!ltToastSuppressed) ltToast(t('bcxInvalid'), 'error'); }
         return true;
     }
 
@@ -3078,7 +3124,7 @@
 
     function fullUnlock(args) {
         const target = getPlayer(args.trim());
-        if (!hasBCItemPermission(target)) { ChatRoomSendLocal(t('noPermission') + " " + getNickname(target) + "。"); return true; }
+        if (!hasBCItemPermission(target)) { ChatRoomSendLocal(t('noPermission') + " " + getNickname(target) + "。"); if (!ltToastSuppressed) ltToast((isZh() ? "无权限: " : "No permission: ") + getNickname(target), 'error'); return true; }
         try {
             const skipLocks = ["OwnerPadlock", "OwnerTimerPadlock", "LoversPadlock", "LoversTimerPadlock"];
             let count = 0;
@@ -3087,10 +3133,11 @@
                     InventoryUnlock(target, a); count++;
                 }
             }
-            if (!count) { ChatRoomSendLocal(getNickname(target) + " " + t('unlockNone') + "！"); return true; }
+            if (!count) { ChatRoomSendLocal(getNickname(target) + " " + t('unlockNone') + "！"); if (!ltToastSuppressed) ltToast(getNickname(target) + " " + (isZh() ? "没有可解锁的锁" : "has no unlockable locks"), 'info'); return true; }
             ChatRoomCharacterUpdate(target);
             chatSendCustomAction(getNickname(Player) + " " + t('unlockDone') + " " + getNickname(target) + "！");
-        } catch (e) { console.error("🐈‍⬛ [BC] ❌ fullUnlock 错误:", e.message); }
+            if (!ltToastSuppressed) ltToast((isZh() ? "已解锁 " : "Unlocked ") + count + " " + (isZh() ? "把锁 (" : "lock(s) on (") + getNickname(target) + ")", 'success');
+        } catch (e) { console.error("🐈‍⬛ [BC] ❌ fullUnlock 错误:", e.message); if (!ltToastSuppressed) ltToast((isZh() ? "操作失败: " : "Failed: ") + e.message, 'error'); }
         return true;
     }
 
@@ -3136,17 +3183,18 @@
         const targetIdentifier = params[0] || "";
         const lockName         = params[1] || "";
         const target           = getPlayer(targetIdentifier);
-        if (target === Player && !targetIdentifier) { ChatRoomSendLocal(t('lockSpecify')); return true; }
+        if (target === Player && !targetIdentifier) { ChatRoomSendLocal(t('lockSpecify')); if (!ltToastSuppressed) ltToast(t('lockSpecify'), 'info'); return true; }
         if (!ChatRoomCharacter?.find(c => c.MemberNumber === target.MemberNumber)) {
-            ChatRoomSendLocal(getNickname(target) + " " + t('notInRoom') + "！"); return true;
+            ChatRoomSendLocal(getNickname(target) + " " + t('notInRoom') + "！"); if (!ltToastSuppressed) ltToast(getNickname(target) + " " + (isZh() ? "不在房间" : "not in room"), 'error'); return true;
         }
-        if (!hasBCItemPermission(target)) { ChatRoomSendLocal(t('noPermission') + " " + getNickname(target) + "。"); return true; }
+        if (!hasBCItemPermission(target)) { ChatRoomSendLocal(t('noPermission') + " " + getNickname(target) + "。"); if (!ltToastSuppressed) ltToast((isZh() ? "无权限: " : "No permission: ") + getNickname(target), 'error'); return true; }
         const itemMiscGroup = AssetGroupGet(Player.AssetFamily, "ItemMisc");
         if (!itemMiscGroup) return true;
         const validLocks = itemMiscGroup.Asset.filter(a => a.IsLock).map(a => ({ Name: a.Name, Description: a.Description || a.Name }));
         const lock = validLocks.find(l => l.Name.toLowerCase() === lockName.toLowerCase() || l.Description.toLowerCase() === lockName.toLowerCase());
         if (!lock) {
             ChatRoomSendLocal(t('lockInvalid') + "：" + lockName + "。" + t('lockAvailable') + "：" + validLocks.map(l => l.Description).join("、"));
+            if (!ltToastSuppressed) ltToast((isZh() ? "无效锁类型: " : "Invalid lock: ") + lockName, 'error');
             return true;
         }
         try {
@@ -3158,10 +3206,11 @@
                     count++;
                 }
             }
-            if (!count) { ChatRoomSendLocal(getNickname(target) + " " + t('lockNone') + "！"); return true; }
+            if (!count) { ChatRoomSendLocal(getNickname(target) + " " + t('lockNone') + "！"); if (!ltToastSuppressed) ltToast(getNickname(target) + " " + (isZh() ? "没有可上锁的束缚" : "has no lockable restraints"), 'info'); return true; }
             ChatRoomCharacterUpdate(target);
             chatSendCustomAction(getNickname(Player) + " 为 " + getNickname(target) + " 的 " + count + " " + t('lockDone') + " " + lock.Description + "！");
-        } catch (e) { console.error("🐈‍⬛ [BC] ❌ fullLock 错误:", e.message); }
+            if (!ltToastSuppressed) ltToast((isZh() ? "已为 " : "Locked ") + count + " " + (isZh() ? "件束缚上锁 (" : "item(s) on (") + getNickname(target) + ")", 'success');
+        } catch (e) { console.error("🐈‍⬛ [BC] ❌ fullLock 错误:", e.message); if (!ltToastSuppressed) ltToast((isZh() ? "操作失败: " : "Failed: ") + e.message, 'error'); }
         return true;
     }
 
