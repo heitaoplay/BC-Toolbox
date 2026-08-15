@@ -2,7 +2,7 @@
 // @name         BC工具箱
 // @name:zh      BC工具箱
 // @namespace    https://github.com/heitaoplay/BC-Toolbox
-// @version      3.1.3
+// @version      3.2.0
 // @description  BC 多功能工具箱 - BC工具箱 (R121 Compatible) + UI 面板 + 角色选择器 + Canvas SVG 图标 + 拖拽排序 + 主题自定义 + 自动解绑女仆
 // @author       heitaoplay
 // @include      /^https:\/\/(www\.)?bondage(projects\.elementfx|-(europe|asia))\.com\/.*/
@@ -30,7 +30,7 @@
     }
     window.__BCToolboxLoaded__ = true;
     let modApi = null;
-    const modversion = "3.1.3";
+    const modversion = "3.2.0";
 
     const rpBtnX    = 955;
     const rpBtnY    = 855;
@@ -42,7 +42,27 @@
     const TOOL_BTN_Y = 555;
     const TOOL_BTN_W = 45;
     const TOOL_BTN_H = 45;
+    const STORAGE_TOOL_BTN   = 'bcToolbox_float_btn';
     const STORAGE_TOOL_PANEL = 'bcToolbox_ui_panel';
+
+    // 浮动按钮位置（角落常显 + 拖拽记忆）
+    function loadToolBtnPos() {
+        try {
+            const s = localStorage.getItem(STORAGE_TOOL_BTN);
+            if (s) {
+                const p = JSON.parse(s);
+                if (typeof p.x === 'number' && typeof p.y === 'number') return { x: p.x, y: p.y };
+            }
+        } catch (_) {}
+        const w = (typeof CommonScreenWidth !== 'undefined' && CommonScreenWidth) ? CommonScreenWidth : 1920;
+        return { x: w - TOOL_BTN_W - 15, y: 15 };
+    }
+    function saveToolBtnPos() {
+        try { localStorage.setItem(STORAGE_TOOL_BTN, JSON.stringify(toolBtnPos)); } catch (_) {}
+    }
+    const toolBtnPos = loadToolBtnPos();
+    let toolBtnDrag = null;          // { offX, offY, moved, sx, sy }
+    let toolBtnSuppressClick = false; // 拖拽后抑制一次点击 toggl
     const STORAGE_TOOL_THEME = 'bcToolbox_theme';
     const STORAGE_TOOL_ORDER = 'bcToolbox_btn_order';
     const STORAGE_RM_TRIGGER = 'bcToolbox_rm_trigger';
@@ -51,6 +71,8 @@
     let toolPanelVisible = false;
     let _toolDragging = false;
     let actionGridEl = null;
+    let searchInputEl = null;
+    var catCollapsed = {};
 
     // ════════════════════════════════════════════════════════════════════════
     // SVG 图标库 — 线条风格，stroke=currentColor
@@ -1363,6 +1385,17 @@
             "#lt-quick-panel .ltq-section{font-size:10px;font-weight:600;color:var(--lt-text-faint,#5a4a7a);text-transform:uppercase;letter-spacing:0.12em;display:flex;align-items:center;gap:8px;margin:6px 2px 3px;}",
             "#lt-quick-panel .ltq-section::after{content:'';flex:1;height:1px;background:linear-gradient(to right,var(--lt-border,rgba(255,255,255,0.06)),transparent);}",
 
+            // ── Search + Category groups ──
+            "#lt-quick-panel .ltq-actions{display:block;margin-top:2px;}",
+            "#lt-quick-panel .ltq-search{width:100%;box-sizing:border-box;margin:0 0 6px;padding:6px 10px;background:var(--lt-surface,rgba(255,255,255,0.03));border:1px solid var(--lt-border,rgba(255,255,255,0.06));border-radius:8px;color:var(--lt-text-primary,#e8edf5);font-size:11.5px;font-family:inherit;outline:none;}",
+            "#lt-quick-panel .ltq-search::placeholder{color:var(--lt-text-faint,#5a6a85);}",
+            "#lt-quick-panel .ltq-search:focus{border-color:var(--lt-accent);box-shadow:0 0 0 2px var(--lt-accent-glow);}",
+            "#lt-quick-panel .ltq-cat{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:600;color:var(--lt-text-faint,#5a4a7a);text-transform:uppercase;letter-spacing:0.10em;margin:7px 2px 3px;cursor:pointer;user-select:none;}",
+            "#lt-quick-panel .ltq-cat::after{content:'';flex:1;height:1px;background:linear-gradient(to right,var(--lt-border,rgba(255,255,255,0.06)),transparent);}",
+            "#lt-quick-panel .ltq-cat-caret{display:inline-block;font-size:9px;transition:transform 0.18s;color:var(--lt-text-faint,#5a6a85);}",
+            "#lt-quick-panel .ltq-cat.collapsed .ltq-cat-caret{transform:rotate(-90deg);}",
+            "#lt-quick-panel .ltq-cat.collapsed + .ltq-grid{display:none;}",
+
             // ── Toggle Row ──
             "#lt-quick-panel .ltq-toggle{display:flex;align-items:center;justify-content:space-between;padding:6px 12px;background:linear-gradient(180deg,var(--lt-surface,rgba(255,255,255,0.03)),rgba(255,255,255,0.01));border:1px solid var(--lt-border,rgba(255,255,255,0.05));border-radius:8px;font-size:11.5px;color:var(--lt-text-secondary,#a0b0c8);cursor:pointer;transition:all 0.18s cubic-bezier(0.16,1,0.3,1);font-family:inherit;box-shadow:inset 0 1px 0 rgba(255,255,255,0.02);}",
             "#lt-quick-panel .ltq-toggle:hover{background:linear-gradient(180deg,var(--lt-surface-hover),var(--lt-surface,rgba(255,255,255,0.02)));border-color:var(--lt-border-hover);color:var(--lt-accent-light);}",
@@ -1533,18 +1566,26 @@
         }
     }
 
+    const ACTION_CATS = [
+        { key: 'appearance', zh: '外观',       en: 'Appearance' },
+        { key: 'restraint',  zh: '束缚管理',   en: 'Restraint' },
+        { key: 'magic',      zh: 'LSCG与魔法', en: 'LSCG & Magic' },
+        { key: 'craft',      zh: '订制与导入', en: 'Craft & Import' },
+        { key: 'boost',      zh: '增益',       en: 'Boost' },
+    ];
+
     const ALL_ACTIONS = [
-        { id: 'wardrobe',  icon: SVG.wardrobe,  label: '衣柜',    title: '打开衣柜', fn: function() { wardrobe(); } },
-        { id: 'undo',      icon: SVG.undo,      label: '回滚',    title: '回滚外观到之前的状态', fn: async function() {
-            const target = await requestCharacter('选择要回滚外观的目标');
+        { id: 'wardrobe',  icon: SVG.wardrobe,  label: '衣柜',    title: '打开衣柜', category: 'appearance', fn: function() { wardrobe(); } },
+        { id: 'undo',      icon: SVG.undo,      label: '回滚',    title: '回滚外观到之前的状态', category: 'appearance', fn: async function() {
+            const target = await pickTarget('选择要回滚外观的目标');
             if (target) undoCommand(getNickname(target));
         }},
-        { id: 'free',      icon: SVG.free,      label: '解除束缚', title: '选择性移除束缚物品', fn: async function() {
-            const target = await requestCharacter('选择要解除束缚的目标');
+        { id: 'free',      icon: SVG.free,      label: '解除束缚', title: '选择性移除束缚物品', category: 'restraint', fn: async function() {
+            const target = await pickTarget('选择要解除束缚的目标');
             if (target) free(getNickname(target));
         }},
-        { id: 'lock',      icon: SVG.lock,      label: '上锁',    title: '为束缚添加锁', fn: async function() {
-            const target = await requestCharacter('选择要上锁的目标');
+        { id: 'lock',      icon: SVG.lock,      label: '上锁',    title: '为束缚添加锁', category: 'restraint', fn: async function() {
+            const target = await pickTarget('选择要上锁的目标');
             if (!target) return;
             const itemMiscGroup = AssetGroupGet(Player.AssetFamily, "ItemMisc");
             if (!itemMiscGroup) { ChatRoomSendLocal('无法获取锁类型列表'); return; }
@@ -1557,31 +1598,31 @@
             if (!lock) return;
             fullLock(getNickname(target) + ' ' + lock.Name);
         }},
-        { id: 'freetotal', icon: SVG.freetotal, label: '全解除',  title: '移除所有束缚', fn: async function() {
-            const target = await requestCharacter('选择要全部解除的目标');
+        { id: 'freetotal', icon: SVG.freetotal, label: '全解除',  title: '移除所有束缚', category: 'restraint', fn: async function() {
+            const target = await pickTarget('选择要全部解除的目标');
             if (target) freetotal(getNickname(target));
         }},
-        { id: 'unlock',    icon: SVG.unlock,    label: '全解锁',  title: '移除所有锁（跳过主人/恋人锁）', fn: async function() {
-            const target = await requestCharacter('选择要解锁的目标');
+        { id: 'unlock',    icon: SVG.unlock,    label: '全解锁',  title: '移除所有锁（跳过主人/恋人锁）', category: 'restraint', fn: async function() {
+            const target = await pickTarget('选择要解锁的目标');
             if (target) fullUnlock(getNickname(target));
         }},
-        { id: 'password',  icon: SVG.password,  label: '锁密码',  title: '查看当前锁的密码', fn: function() { execChatCommand('/infolock'); } },
-        { id: 'struggle',  icon: SVG.struggle,  label: '挣扎',    title: 'LSCG 挣脱指令', fn: function() { execChatCommand('/lscg escape'); } },
-        { id: 'wake',      icon: SVG.wake,      label: '唤醒',    title: 'LSCG 唤醒：睡眠 / 催眠', fn: function() { openWakeMenu(); } },
-        { id: 'enhance',   icon: SVG.enhance,   label: '增强',    title: '获取道具/金钱/技能', fn: function() { getEverything(); } },
-        { id: 'bcxcmd',    icon: SVG.bcxcmd,    label: 'BCX指令', title: '触发 BCX 指令（表情/姿态/场所/文本等）', fn: async function() {
+        { id: 'password',  icon: SVG.password,  label: '锁密码',  title: '查看当前锁的密码', category: 'restraint', fn: function() { execChatCommand('/infolock'); } },
+        { id: 'struggle',  icon: SVG.struggle,  label: '挣扎',    title: 'LSCG 挣脱指令', category: 'magic', fn: function() { execChatCommand('/lscg escape'); } },
+        { id: 'wake',      icon: SVG.wake,      label: '唤醒',    title: 'LSCG 唤醒：睡眠 / 催眠', category: 'magic', fn: function() { openWakeMenu(); } },
+        { id: 'enhance',   icon: SVG.enhance,   label: '增强',    title: '获取道具/金钱/技能', category: 'boost', fn: function() { getEverything(); } },
+        { id: 'bcxcmd',    icon: SVG.bcxcmd,    label: 'BCX指令', title: '触发 BCX 指令（表情/姿态/场所/文本等）', category: 'craft', fn: async function() {
             await openBcxCommandPanel();
         }},
-        { id: 'bcx',       icon: SVG.bcx,       label: 'BCX导入', title: '从剪贴板导入 BCX 外观', fn: async function() {
-            const target = await requestCharacter('选择要导入外观的目标');
+        { id: 'bcx',       icon: SVG.bcx,       label: 'BCX导入', title: '从剪贴板导入 BCX 外观', category: 'craft', fn: async function() {
+            const target = await pickTarget('选择要导入外观的目标');
             if (target) bcxImport(getNickname(target));
         }},
-        { id: 'editcraft', icon: SVG.craftEdit, label: '编辑订制', title: '批量编辑束缚的订制属性（名称/描述/私有）', fn: async function() {
-            const target = await requestCharacter('选择要编辑属性的目标');
+        { id: 'editcraft', icon: SVG.craftEdit, label: '编辑订制', title: '批量编辑束缚的订制属性（名称/描述/私有）', category: 'craft', fn: async function() {
+            const target = await pickTarget('选择要编辑属性的目标');
             if (target) editCraftBatch(target);
         }},
-        { id: 'clearcraft',icon: SVG.craftClear,label: '清除订制', title: '清除对象身上所有束缚的订制属性', fn: async function() {
-            const target = await requestCharacter('选择要清除订制属性的目标');
+        { id: 'clearcraft',icon: SVG.craftClear,label: '清除订制', title: '清除对象身上所有束缚的订制属性', category: 'craft', fn: async function() {
+            const target = await pickTarget('选择要清除订制属性的目标');
             if (target) clearAllCraft(target);
         }},
     ];
@@ -1594,7 +1635,7 @@
             const s = localStorage.getItem(STORAGE_TOOL_PANEL);
             if (s) return JSON.parse(s);
         } catch (_) {}
-        return { x: TOOL_BTN_X, y: TOOL_BTN_Y + 55 };
+        return { x: toolBtnPos.x, y: toolBtnPos.y + TOOL_BTN_H + 10 };
     }
     function saveToolPanelPos() {
         try { localStorage.setItem(STORAGE_TOOL_PANEL, JSON.stringify(toolPanelPos)); } catch (_) {}
@@ -1645,9 +1686,19 @@
         const body = document.createElement('div');
         body.className = 'ltq-body';
 
-        // ── Action Grid (2-column, draggable) ──
+        // ── Search box ──
+        searchInputEl = document.createElement('input');
+        searchInputEl.className = 'ltq-search';
+        searchInputEl.type = 'text';
+        searchInputEl.placeholder = isZh() ? '搜索工具…' : 'Search tools…';
+        searchInputEl.addEventListener('input', function() {
+            rebuildActionGrid(this.value.trim().toLowerCase());
+        });
+        body.appendChild(searchInputEl);
+
+        // ── Action Grid (grouped, draggable) ──
         actionGridEl = document.createElement('div');
-        actionGridEl.className = 'ltq-grid';
+        actionGridEl.className = 'ltq-actions';
         body.appendChild(actionGridEl);
         rebuildActionGrid();
 
@@ -1920,13 +1971,15 @@
     // ════════════════════════════════════════════════════════════════════════
     // 动作网格重建（拖拽排序后调用）
     // ════════════════════════════════════════════════════════════════════════
-    function rebuildActionGrid() {
+    var currentGridFilter = '';
+    function rebuildActionGrid(filter) {
+        if (typeof filter === 'string') currentGridFilter = filter;
+        else filter = currentGridFilter;
         if (!actionGridEl) return;
         actionGridEl.innerHTML = '';
         var dragSrc = null;
 
-        var orderedActions = getOrderedActions();
-        orderedActions.forEach(function(a) {
+        function makeActionBtn(a) {
             var btn = document.createElement('div');
             btn.className = 'ltq-action';
             btn.title = a.title;
@@ -2000,7 +2053,41 @@
                 rebuildActionGrid();
             });
 
-            actionGridEl.appendChild(btn);
+            return btn;
+        }
+
+        var orderedActions = getOrderedActions();
+        if (filter) {
+            orderedActions = orderedActions.filter(function(a) {
+                var hay = (a.label + ' ' + a.title + ' ' + a.id).toLowerCase();
+                return hay.indexOf(filter) !== -1;
+            });
+        }
+
+        ACTION_CATS.forEach(function(cat) {
+            var items = orderedActions.filter(function(a) { return a.category === cat.key; });
+            if (!items.length) return;
+
+            var header = document.createElement('div');
+            header.className = 'ltq-cat' + (catCollapsed[cat.key] ? ' collapsed' : '');
+            var nameEl = document.createElement('span');
+            nameEl.className = 'ltq-cat-name';
+            nameEl.textContent = isZh() ? cat.zh : cat.en;
+            var caret = document.createElement('span');
+            caret.className = 'ltq-cat-caret';
+            caret.textContent = '▾';
+            header.appendChild(nameEl);
+            header.appendChild(caret);
+            header.addEventListener('click', function() {
+                catCollapsed[cat.key] = !catCollapsed[cat.key];
+                rebuildActionGrid();
+            });
+            actionGridEl.appendChild(header);
+
+            var bodyWrap = document.createElement('div');
+            bodyWrap.className = 'ltq-grid';
+            items.forEach(function(a) { bodyWrap.appendChild(makeActionBtn(a)); });
+            actionGridEl.appendChild(bodyWrap);
         });
     }
 
@@ -2298,6 +2385,15 @@
     }
 
     /* ── 角色选择器 ── */
+    // 默认作用于当前正在交互的角色（CurrentCharacter），否则弹出选人窗
+    async function pickTarget(promptText) {
+        if (typeof CurrentCharacter !== 'undefined' && CurrentCharacter &&
+            (ChatRoomCharacter || []).some(function(c) { return c.MemberNumber === CurrentCharacter.MemberNumber; })) {
+            return CurrentCharacter;
+        }
+        return await requestCharacter(promptText);
+    }
+
     function requestCharacter(title) {
         return new Promise(resolve => {
             const targets = ChatRoomCharacter || [];
@@ -2555,8 +2651,7 @@
         // 绘制 RP 按鈕 + 工具觸发按鈕
         safeHookFunction("DrawProcess", 4, (args, next) => {
             const result = next(args);
-            if (typeof CurrentScreen !== 'undefined' && CurrentScreen === 'ChatRoom' &&
-                (typeof CurrentCharacter === 'undefined' || CurrentCharacter === null)) {
+            if (typeof CurrentScreen !== 'undefined' && CurrentScreen === 'ChatRoom') {
                 if (getES().rpBtnVisible === 1) {
                     DrawButton(rpBtnX, rpBtnY, rpBtnSize, rpBtnSize, '',
                         getRpMode(Player) ? "Orange" : "Gray", "", "RP模式切換");
@@ -2564,8 +2659,8 @@
                 }
                 // 绘制工具触发按钮 — 使用主题强调色 + SVG 图标
                 var accent = getAccentPreset();
-                DrawButton(TOOL_BTN_X, TOOL_BTN_Y, TOOL_BTN_W, TOOL_BTN_H, '', accent.accentDark, accent.accent, null, false);
-                drawCanvasIconOnButton('tool', TOOL_BTN_X, TOOL_BTN_Y, TOOL_BTN_W, TOOL_BTN_H, 24);
+                DrawButton(toolBtnPos.x, toolBtnPos.y, TOOL_BTN_W, TOOL_BTN_H, '', accent.accentDark, accent.accent, null, false);
+                drawCanvasIconOnButton('tool', toolBtnPos.x, toolBtnPos.y, TOOL_BTN_W, TOOL_BTN_H, 24);
             }
             return result;
         });
@@ -2582,9 +2677,49 @@
                 }
                 return;
             }
-            if (MouseIn(TOOL_BTN_X, TOOL_BTN_Y, TOOL_BTN_W, TOOL_BTN_H)) {
-                toggleToolPanel();
+            if (toolBtnHit()) {
+                if (toolBtnSuppressClick) { toolBtnSuppressClick = false; }
+                else { toggleToolPanel(); }
                 return;
+            }
+            return next(args);
+        });
+
+        // 工具浮动按钮命中检测（基于 MouseX/MouseY）
+        function toolBtnHit() {
+            const x = (typeof MouseX !== 'undefined') ? MouseX : -1;
+            const y = (typeof MouseY !== 'undefined') ? MouseY : -1;
+            return x >= toolBtnPos.x && x <= toolBtnPos.x + TOOL_BTN_W &&
+                   y >= toolBtnPos.y && y <= toolBtnPos.y + TOOL_BTN_H;
+        }
+
+        // 工具浮动按钮拖拽（角落常显 + 位置记忆）
+        safeHookFunction("MouseDown", 1, (args, next) => {
+            const x = (typeof MouseX !== 'undefined') ? MouseX : args[0];
+            const y = (typeof MouseY !== 'undefined') ? MouseY : args[1];
+            if (CurrentScreen === 'ChatRoom' &&
+                x >= toolBtnPos.x && x <= toolBtnPos.x + TOOL_BTN_W &&
+                y >= toolBtnPos.y && y <= toolBtnPos.y + TOOL_BTN_H) {
+                toolBtnDrag = { offX: x - toolBtnPos.x, offY: y - toolBtnPos.y, moved: false, sx: x, sy: y };
+                toolBtnSuppressClick = false;
+            }
+            return next(args);
+        });
+        safeHookFunction("MouseMove", 1, (args, next) => {
+            if (toolBtnDrag) {
+                const x = (typeof MouseX !== 'undefined') ? MouseX : args[0];
+                const y = (typeof MouseY !== 'undefined') ? MouseY : args[1];
+                toolBtnPos.x = Math.max(0, x - toolBtnDrag.offX);
+                toolBtnPos.y = Math.max(0, y - toolBtnDrag.offY);
+                if (Math.abs(x - toolBtnDrag.sx) > 4 || Math.abs(y - toolBtnDrag.sy) > 4) toolBtnDrag.moved = true;
+            }
+            return next(args);
+        });
+        safeHookFunction("MouseUp", 1, (args, next) => {
+            if (toolBtnDrag) {
+                if (toolBtnDrag.moved) saveToolBtnPos();
+                toolBtnSuppressClick = toolBtnDrag.moved;
+                toolBtnDrag = null;
             }
             return next(args);
         });
@@ -3768,7 +3903,7 @@
             ChatRoomSendLocal("未检测到 BCX（Bondage Club Extended）。请确认你自己与对方都安装了 BCX。");
             return;
         }
-        const target = await requestCharacter("选择要触发 BCX 指令的目标");
+        const target = await pickTarget("选择要触发 BCX 指令的目标");
         if (!target) return;
         const targetNum = target.MemberNumber;
         const targetName = getNickname(target);
