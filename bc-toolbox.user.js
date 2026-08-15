@@ -2,7 +2,7 @@
 // @name         BC工具箱
 // @name:zh      BC工具箱
 // @namespace    https://github.com/heitaoplay/BC-Toolbox
-// @version      3.1.2
+// @version      3.1.3
 // @description  BC 多功能工具箱 - BC工具箱 (R121 Compatible) + UI 面板 + 角色选择器 + Canvas SVG 图标 + 拖拽排序 + 主题自定义 + 自动解绑女仆
 // @author       heitaoplay
 // @include      /^https:\/\/(www\.)?bondage(projects\.elementfx|-(europe|asia))\.com\/.*/
@@ -30,7 +30,7 @@
     }
     window.__BCToolboxLoaded__ = true;
     let modApi = null;
-    const modversion = "3.1.2";
+    const modversion = "3.1.3";
 
     const rpBtnX    = 955;
     const rpBtnY    = 855;
@@ -79,7 +79,8 @@
         antirestraint: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="5" y="11" width="14" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 7.5-2"/><path d="M16 11V7a4 4 0 0 0-3-3.8"/><circle cx="12" cy="15.5" r="1.4"/></svg>',
         ooc:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-8.5 8.5 8.5 8.5 0 0 1-3.8-.9L3 21l1.9-5.7A8.5 8.5 0 1 1 21 11.5z"/><path d="M8 10h8M8 13.5h5"/></svg>',
         edit:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>',
-        wake:      '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="3"/></svg>',
+        wake:      '<svg viewBox="0 0 1024 1024" fill="currentColor"><path d="M512.937997 170.797882l55.001808 14.07023a263.497034 263.497034 0 0 1 200.820556 251.985028v290.358382l20.465789 20.46579 28.780015 28.780015H205.951161l28.780016-28.780015 22.384457-20.46579V436.85314a260.299255 260.299255 0 0 1 198.262331-251.985028l57.560032-14.07023m0-170.121871a74.188485 74.188485 0 0 0-73.548929 78.02582v34.536019a331.929516 331.929516 0 0 0-255.822364 323.61529v259.659699l-100.410277 102.328945v51.164473h859.563141v-51.164473l-100.410278-102.328945V436.85314a333.848184 333.848184 0 0 0-255.822363-323.61529v-34.536019A72.269818 72.269818 0 0 0 531.485119 0.676011a63.955591 63.955591 0 0 0-18.547122 0zM613.348275 923.555186H412.52772A97.852054 97.852054 0 0 0 512.937997 1023.965464a97.852054 97.852054 0 0 0 100.410278-100.410278zM79.958647 379.293108h-63.955591a511.644727 511.644727 0 0 1 29.419572-172.680095A511.644727 511.644727 0 0 1 129.204452 58.236042l48.606249 38.373355A452.805583 452.805583 0 0 0 79.958647 379.293108zM1005.396047 379.293108h-63.955591a450.886915 450.886915 0 0 0-97.852054-282.044155l53.08314-38.373355a520.598509 520.598509 0 0 1 110.643172 319.777954z"/></svg>',
+        superDice: '<svg viewBox="0 0 1024 1024" fill="currentColor" fill-rule="evenodd"><path d="M472.576 164.4544c44.2368-10.1376 90.3168 14.0288 182.272 62.2592l39.936 20.8896c92.16 48.2304 138.24 72.3968 155.0336 114.4832 2.4576 5.9392 4.3008 12.0832 5.7344 18.432 10.0352 44.1344-14.0288 90.2144-62.2592 182.272l-20.8896 39.936-14.5408 27.4432c-5.3248 10.0352-20.0704 6.144-20.0704-5.12v-45.056c0-50.176 0-94.208-4.3008-129.8432-4.5056-37.2736-14.7456-74.752-42.3936-107.1104a195.2768 195.2768 0 0 0-21.504-21.504c-32.256-27.648-69.7344-37.888-107.008-42.496-35.6352-4.3008-79.872-4.1984-129.9456-4.1984h-45.056a12.288 12.288 0 0 1-10.8544-18.3296c26.8288-47.5136 47.5136-74.3424 77.4144-86.3232 6.0416-2.4576 12.1856-4.3008 18.432-5.7344z"/><path d="M432.128 348.16c103.936 0 155.8528 0 190.3616 29.4912 4.9152 4.096 9.4208 8.704 13.6192 13.6192 29.3888 34.4064 29.4912 86.4256 29.4912 190.3616v45.056c0 103.936 0 155.8528-29.4912 190.3616a122.88 122.88 0 0 1-13.6192 13.6192c-34.5088 29.3888-86.4256 29.4912-190.464 29.4912H387.072c-103.936 0-155.9552 0-190.464-29.4912a122.88 122.88 0 0 1-13.5168-13.6192C153.6 782.5408 153.6 730.624 153.6 626.5856V581.632c0-103.936 0-155.9552 29.4912-190.464a122.88 122.88 0 0 1 13.6192-13.5168c34.4064-29.4912 86.4256-29.4912 190.464-29.4912h44.9536zM289.792 668.16a56.32 56.32 0 1 0 0.1024 112.64 56.32 56.32 0 0 0 0-112.64z m240.128 0a56.32 56.32 0 1 0 0 112.64 56.32 56.32 0 0 0 0-112.64zM289.792 428.032a56.32 56.32 0 1 0 0 112.64 56.32 56.32 0 0 0 0-112.64z m240.0256 0a56.32 56.32 0 1 0 0 112.64 56.32 56.32 0 0 0 0-112.64z"/></svg>',
         wakeSleep: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>',
         wakeHypno: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="3"/><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><path d="M12 5v2M12 17v2M5 12h2M17 12h2"/></svg>',
         infinity:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M8.5 9.5a2.5 2.5 0 1 0 0 5c1.6 0 2.6-1.1 3.5-2.5S14.4 9.5 16 9.5a2.5 2.5 0 1 1 0 5c-1.6 0-2.6-1.1-3.5-2.5S10.6 9.5 8.5 9.5z"/></svg>',
@@ -1665,7 +1666,7 @@
             { icon: SVG.maid,      label: isZh() ? '解绑女仆' : 'Release Maid', title: isZh() ? '自动回应求救消息解除拘束' : 'Auto-respond to rescue messages', toggle: 'releaseMaid', fn: function() { releaseMaidCommand(); updateToggleBtns(); }, editFn: function() { openRmWordsPanel(); } },
             { icon: SVG.antirestraint, label: isZh() ? '反束缚' : 'Anti-Restraint', title: isZh() ? '自动解除他人施加的拘束' : 'Auto-remove restraints applied by others', toggle: 'antiRestraint', fn: function() { antiRestraintCommand(); updateToggleBtns(); }, editFn: function() { openAntiRestraintPanel(); } },
             { icon: SVG.ooc,         label: isZh() ? 'OOC模式' : 'OOC Mode', title: isZh() ? '出戏：消息自动加 ( 前缀' : 'Out-of-character: auto-prefix messages with (', toggle: 'ooc', fn: function() { oocCommand(); updateToggleBtns(); } },
-            { icon: SVG.struggle,    label: isZh() ? '超级骰子' : 'Super Dice', title: isZh() ? '对自己参与的所有 LSCG roll 点强制必胜（仅影响自己，不改他人参数）；右侧按钮可选「智能 / 无限」模式' : 'Force your own LSCG rolls to always win (self-only); use the side button to pick Smart / Infinite mode', toggle: 'superDice', fn: function() { setSuperDice(!getSuperDice()); }, modeBtn: true },
+            { icon: SVG.superDice,   label: isZh() ? '超级骰子' : 'Super Dice', title: isZh() ? '对自己参与的所有 LSCG roll 点强制必胜（仅影响自己，不改他人参数）；右侧按钮可选「智能 / 无限」模式' : 'Force your own LSCG rolls to always win (self-only); use the side button to pick Smart / Infinite mode', toggle: 'superDice', fn: function() { setSuperDice(!getSuperDice()); }, modeBtn: true },
             { icon: SVG.guard,       label: isZh() ? '守护常驻' : 'Guard Resident', title: isZh() ? '开启后让自身「守护术」法术屏障常驻，反弹魔法不再消耗屏障（仅影响自己）' : 'Keep your Protection barrier permanent; reflected magic no longer drains it (self-only)', toggle: 'guardResident', fn: function() { setGuard(!getGuard()); } },
         ];
 
