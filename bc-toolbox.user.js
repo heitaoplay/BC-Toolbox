@@ -2,7 +2,7 @@
 // @name         BC工具箱
 // @name:zh      BC工具箱
 // @namespace    https://github.com/heitaoplay/BC-Toolbox
-// @version      3.1.1
+// @version      3.1.2
 // @description  BC 多功能工具箱 - BC工具箱 (R121 Compatible) + UI 面板 + 角色选择器 + Canvas SVG 图标 + 拖拽排序 + 主题自定义 + 自动解绑女仆
 // @author       heitaoplay
 // @include      /^https:\/\/(www\.)?bondage(projects\.elementfx|-(europe|asia))\.com\/.*/
@@ -30,7 +30,7 @@
     }
     window.__BCToolboxLoaded__ = true;
     let modApi = null;
-    const modversion = "3.1.1";
+    const modversion = "3.1.2";
 
     const rpBtnX    = 955;
     const rpBtnY    = 855;
@@ -1456,6 +1456,82 @@
     // ════════════════════════════════════════════════════════════════════════
     // 所有动作定义（含 SVG 图标）
     // ════════════════════════════════════════════════════════════════════════
+    // 唤醒二级菜单：睡眠（/lscg wake）/ 催眠（/lscg unzonk），差异化视觉
+    var wakePop = null;
+    var wakePopClose = null;
+    function closeWakePop() {
+        if (wakePop) {
+            try { wakePop.remove(); } catch (_) {}
+            wakePop = null;
+        }
+        if (wakePopClose) {
+            try { document.removeEventListener('mousedown', wakePopClose, true); } catch (_) {}
+            wakePopClose = null;
+        }
+    }
+    function openWakeMenu() {
+        try {
+            if (wakePop) { closeWakePop(); return; }
+            var anchor = document.querySelector('.ltq-action[data-id="wake"]') || actionGridEl;
+            if (!anchor) { console.error('[BC] openWakeMenu: anchor not found'); return; }
+            var pop = document.createElement('div');
+            pop.className = 'lt-wake-pop';
+
+            var items = [
+                { label: '睡眠', sub: '/lscg wake',   icon: SVG.wakeSleep, cmd: 'wake',   cls: 'lt-wake-sleep' },
+                { label: '催眠', sub: '/lscg unzonk', icon: SVG.wakeHypno, cmd: 'unzonk', cls: 'lt-wake-hypno' }
+            ];
+            items.forEach(function(it) {
+                var item = document.createElement('div');
+                item.className = 'lt-wake-item ' + it.cls;
+
+                var ic = document.createElement('span');
+                ic.className = 'lt-wake-ic';
+                ic.innerHTML = it.icon;
+
+                var lbl = document.createElement('span');
+                lbl.className = 'lt-wake-label';
+                lbl.textContent = it.label;
+
+                var sub = document.createElement('span');
+                sub.className = 'lt-wake-sub';
+                sub.textContent = it.sub;
+
+                item.appendChild(ic);
+                item.appendChild(lbl);
+                item.appendChild(sub);
+
+                item.addEventListener('click', function(ev) {
+                    ev.stopPropagation();
+                    ltSendLscg(it.cmd);
+                    closeWakePop();
+                });
+                pop.appendChild(item);
+            });
+
+            document.body.appendChild(pop);
+
+            var r = anchor.getBoundingClientRect();
+            pop.style.width = Math.max(r.width, 170) + 'px';
+            pop.style.left = r.left + 'px';
+            var ph = pop.offsetHeight;
+            var top = r.bottom + 6;
+            if (top + ph > window.innerHeight) top = r.top - ph - 6;
+            pop.style.top = top + 'px';
+
+            function onDown(e) {
+                if (!pop.contains(e.target) && !anchor.contains(e.target)) {
+                    closeWakePop();
+                }
+            }
+            wakePop = pop;
+            wakePopClose = onDown;
+            setTimeout(function() { if (wakePopClose === onDown) document.addEventListener('mousedown', onDown, true); }, 0);
+        } catch (err) {
+            console.error('[BC] openWakeMenu error:', err);
+        }
+    }
+
     const ALL_ACTIONS = [
         { id: 'wardrobe',  icon: SVG.wardrobe,  label: '衣柜',    title: '打开衣柜', fn: function() { wardrobe(); } },
         { id: 'undo',      icon: SVG.undo,      label: '回滚',    title: '回滚外观到之前的状态', fn: async function() {
@@ -1760,84 +1836,6 @@
                 setTimeout(function() { document.addEventListener('mousedown', onDocDown, true); }, 0);
             });
             return btn;
-        }
-
-        // 唤醒二级菜单：睡眠（/lscg wake）/ 催眠（/lscg unzonk），差异化视觉
-        var wakePop = null;
-        var wakePopClose = null;
-        function closeWakePop() {
-            if (wakePop) {
-                try { wakePop.remove(); } catch (_) {}
-                wakePop = null;
-            }
-            if (wakePopClose) {
-                try { document.removeEventListener('mousedown', wakePopClose, true); } catch (_) {}
-                wakePopClose = null;
-            }
-        }
-        function openWakeMenu() {
-            try {
-                // 已打开则切换关闭
-                if (wakePop) { closeWakePop(); return; }
-                var anchor = document.querySelector('.ltq-action[data-id="wake"]') || actionGridEl;
-                if (!anchor) { console.error('[BC] openWakeMenu: anchor not found'); return; }
-                var pop = document.createElement('div');
-                pop.className = 'lt-wake-pop';
-
-                var items = [
-                    { label: '睡眠', sub: '/lscg wake',   icon: SVG.wakeSleep, cmd: 'wake',   cls: 'lt-wake-sleep' },
-                    { label: '催眠', sub: '/lscg unzonk', icon: SVG.wakeHypno, cmd: 'unzonk', cls: 'lt-wake-hypno' }
-                ];
-                items.forEach(function(it) {
-                    var item = document.createElement('div');
-                    item.className = 'lt-wake-item ' + it.cls;
-
-                    var ic = document.createElement('span');
-                    ic.className = 'lt-wake-ic';
-                    ic.innerHTML = it.icon;
-
-                    var lbl = document.createElement('span');
-                    lbl.className = 'lt-wake-label';
-                    lbl.textContent = it.label;
-
-                    var sub = document.createElement('span');
-                    sub.className = 'lt-wake-sub';
-                    sub.textContent = it.sub;
-
-                    item.appendChild(ic);
-                    item.appendChild(lbl);
-                    item.appendChild(sub);
-
-                    item.addEventListener('click', function(ev) {
-                        ev.stopPropagation();
-                        ltSendLscg(it.cmd);
-                        closeWakePop();
-                    });
-                    pop.appendChild(item);
-                });
-
-                document.body.appendChild(pop);
-
-                // 定位到唤醒按钮下方，超出视口则翻到上方
-                var r = anchor.getBoundingClientRect();
-                pop.style.width = Math.max(r.width, 170) + 'px';
-                pop.style.left = r.left + 'px';
-                var ph = pop.offsetHeight;
-                var top = r.bottom + 6;
-                if (top + ph > window.innerHeight) top = r.top - ph - 6;
-                pop.style.top = top + 'px';
-
-                function onDown(e) {
-                    if (!pop.contains(e.target) && !anchor.contains(e.target)) {
-                        closeWakePop();
-                    }
-                }
-                wakePop = pop;
-                wakePopClose = onDown;
-                setTimeout(function() { if (wakePopClose === onDown) document.addEventListener('mousedown', onDown, true); }, 0);
-            } catch (err) {
-                console.error('[BC] openWakeMenu error:', err);
-            }
         }
 
         function updateToggleState(ref, key) {
