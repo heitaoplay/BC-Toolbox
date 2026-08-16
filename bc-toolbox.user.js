@@ -2,7 +2,7 @@
 // @name         BC工具箱
 // @name:zh      BC工具箱
 // @namespace    https://github.com/heitaoplay/BC-Toolbox
-// @version      3.2.5
+// @version      3.2.4
 // @description  BC 多功能工具箱 - BC工具箱 (R121 Compatible) + UI 面板 + 角色选择器 + Canvas SVG 图标 + 拖拽排序 + 主题自定义 + 自动解绑女仆
 // @author       heitaoplay
 // @include      /^https:\/\/(www\.)?bondage(projects\.elementfx|-(europe|asia))\.com\/.*/
@@ -30,7 +30,7 @@
     }
     window.__BCToolboxLoaded__ = true;
     let modApi = null;
-    const modversion = "3.2.5";
+    const modversion = "3.2.4";
 
     const rpBtnX    = 955;
     const rpBtnY    = 855;
@@ -80,32 +80,6 @@
     let actionGridEl = null;
     let searchInputEl = null;
     var catCollapsed = {};
-    var toggleSectionEl = null;          // 开关区容器（可按 tab 显隐）
-    let tabBarEl = null;                 // 分类标签栏
-
-    // ── 面板分类 Tab：记住用户最后停留的 tab，默认进入「束缚」分类（最短、最常用）──
-    const STORAGE_PANEL_TAB = 'bcToolbox_panel_tab';
-    const PANEL_TABS = [
-        { key: 'all',       label: isZh() ? '全部' : 'All' },
-        { key: 'appearance',label: isZh() ? '外观' : 'Look' },
-        { key: 'restraint', label: isZh() ? '束缚' : 'Bind' },
-        { key: 'magic',     label: isZh() ? '魔法' : 'Magic' },
-        { key: 'craft',     label: isZh() ? '订制' : 'Craft' },
-        { key: 'boost',     label: isZh() ? '增益' : 'Boost' },
-        { key: 'toggles',   label: isZh() ? '开关' : 'Switches' }
-    ];
-    let activePanelTab = 'restraint';
-    function loadPanelTab() {
-        try {
-            const s = localStorage.getItem(STORAGE_PANEL_TAB);
-            if (s && PANEL_TABS.some(function(t) { return t.key === s; })) return s;
-        } catch (_) {}
-        return 'restraint';
-    }
-    function savePanelTab() {
-        try { localStorage.setItem(STORAGE_PANEL_TAB, activePanelTab); } catch (_) {}
-    }
-    activePanelTab = loadPanelTab();
 
     // ════════════════════════════════════════════════════════════════════════
     // SVG 图标库 — 线条风格，stroke=currentColor
@@ -1450,13 +1424,6 @@
             "#lt-quick-panel .ltq-search{width:100%;box-sizing:border-box;margin:0 0 6px;padding:6px 10px;background:var(--lt-surface,rgba(255,255,255,0.03));border:1px solid var(--lt-border,rgba(255,255,255,0.06));border-radius:8px;color:var(--lt-text-primary,#e8edf5);font-size:11.5px;font-family:inherit;outline:none;}",
             "#lt-quick-panel .ltq-search::placeholder{color:var(--lt-text-faint,#5a6a85);}",
             "#lt-quick-panel .ltq-search:focus{border-color:var(--lt-accent);box-shadow:0 0 0 2px var(--lt-accent-glow);}",
-            "#lt-quick-panel .ltq-tabs{display:flex;gap:4px;overflow-x:auto;margin:0 0 6px;padding-bottom:3px;scrollbar-width:none;}",
-            "#lt-quick-panel .ltq-tabs::-webkit-scrollbar{display:none;}",
-            "#lt-quick-panel .ltq-tab{flex:0 0 auto;padding:5px 10px;border:1px solid var(--lt-border,rgba(255,255,255,0.06));border-radius:9px;background:linear-gradient(180deg,var(--lt-surface,rgba(255,255,255,0.03)),rgba(255,255,255,0.01));color:var(--lt-text-secondary,#a0b0c8);font-size:10.5px;font-weight:500;font-family:inherit;cursor:pointer;white-space:nowrap;transition:all 0.18s cubic-bezier(0.16,1,0.3,1);box-shadow:inset 0 1px 0 rgba(255,255,255,0.02);}",
-            "#lt-quick-panel .ltq-tab:hover{border-color:var(--lt-border-hover);color:var(--lt-accent-light);}",
-            "#lt-quick-panel .ltq-tab:active{transform:scale(0.96);}",
-            "#lt-quick-panel .ltq-tab.active{background:var(--lt-header-grad);border-color:transparent;color:#fff;box-shadow:inset 0 1px 0 rgba(255,255,255,0.15),0 2px 8px var(--lt-accent-glow);}",
-            "#lt-quick-panel .ltq-toggle-section{margin-top:2px;display:flex;flex-direction:column;gap:3px;}",
             "#lt-quick-panel .ltq-cat{display:flex;align-items:center;gap:6px;font-size:10px;font-weight:600;color:var(--lt-text-faint,#5a4a7a);text-transform:uppercase;letter-spacing:0.10em;margin:7px 2px 3px;cursor:pointer;user-select:none;}",
             "#lt-quick-panel .ltq-cat::after{content:'';flex:1;height:1px;background:linear-gradient(to right,var(--lt-border,rgba(255,255,255,0.06)),transparent);}",
             "#lt-quick-panel .ltq-cat-caret{display:inline-block;font-size:9px;transition:transform 0.18s;color:var(--lt-text-faint,#5a6a85);}",
@@ -1793,41 +1760,17 @@
         });
         body.appendChild(searchInputEl);
 
-        // ── Category Tab Bar ──
-        tabBarEl = document.createElement('div');
-        tabBarEl.className = 'ltq-tabs';
-        PANEL_TABS.forEach(function(tb) {
-            const tab = document.createElement('button');
-            tab.type = 'button';
-            tab.className = 'ltq-tab' + (tb.key === activePanelTab ? ' active' : '');
-            tab.textContent = tb.label;
-            tab.dataset.tab = tb.key;
-            tab.addEventListener('click', function() {
-                if (activePanelTab === tb.key) return;
-                activePanelTab = tb.key;
-                savePanelTab();
-                tabBarEl.querySelectorAll('.ltq-tab').forEach(function(t) {
-                    t.classList.toggle('active', t.dataset.tab === activePanelTab);
-                });
-                rebuildActionGrid();
-            });
-            tabBarEl.appendChild(tab);
-        });
-        body.appendChild(tabBarEl);
-
         // ── Action Grid (grouped, draggable) ──
         actionGridEl = document.createElement('div');
         actionGridEl.className = 'ltq-actions';
         body.appendChild(actionGridEl);
         rebuildActionGrid();
 
-        // ── Toggle Section (own tab container) ──
-        toggleSectionEl = document.createElement('div');
-        toggleSectionEl.className = 'ltq-toggle-section';
+        // ── Toggle Section ──
         const sectionLabel = document.createElement('div');
         sectionLabel.className = 'ltq-section';
         sectionLabel.textContent = isZh() ? '开关' : 'Toggles';
-        toggleSectionEl.appendChild(sectionLabel);
+        body.appendChild(sectionLabel);
 
         const toggleBtnRefs = {};
 
@@ -1947,9 +1890,8 @@
             updateToggleState(toggleBtnRefs[tg.toggle], tg.toggle);
 
             row.addEventListener('click', tg.fn);
-            toggleSectionEl.appendChild(row);
+            body.appendChild(row);
         });
-        body.appendChild(toggleSectionEl);
 
         function buildLscgMenu(title, icon, items) {
             const btn = document.createElement('div');
@@ -2188,55 +2130,31 @@
             });
         }
 
-        // 开关 tab：隐藏动作网格，仅显示开关区
-        if (activePanelTab === 'toggles') {
-            actionGridEl.style.display = 'none';
-            if (toggleSectionEl) toggleSectionEl.style.display = '';
-            return;
-        }
-        actionGridEl.style.display = '';
-        if (toggleSectionEl) toggleSectionEl.style.display = 'none';
+        ACTION_CATS.forEach(function(cat) {
+            var items = orderedActions.filter(function(a) { return a.category === cat.key; });
+            if (!items.length) return;
 
-        // 搜索时忽略分类限制，全局按分类分组展示
-        var showAll = (activePanelTab === 'all') || !!filter;
-
-        if (showAll) {
-            ACTION_CATS.forEach(function(cat) {
-                var items = orderedActions.filter(function(a) { return a.category === cat.key; });
-                if (!items.length) return;
-
-                var header = document.createElement('div');
-                header.className = 'ltq-cat' + (catCollapsed[cat.key] ? ' collapsed' : '');
-                var nameEl = document.createElement('span');
-                nameEl.className = 'ltq-cat-name';
-                nameEl.textContent = isZh() ? cat.zh : cat.en;
-                var caret = document.createElement('span');
-                caret.className = 'ltq-cat-caret';
-                caret.textContent = '▾';
-                header.appendChild(nameEl);
-                header.appendChild(caret);
-                header.addEventListener('click', function() {
-                    catCollapsed[cat.key] = !catCollapsed[cat.key];
-                    rebuildActionGrid();
-                });
-                actionGridEl.appendChild(header);
-
-                var bodyWrap = document.createElement('div');
-                bodyWrap.className = 'ltq-grid';
-                items.forEach(function(a) { bodyWrap.appendChild(makeActionBtn(a)); });
-                actionGridEl.appendChild(bodyWrap);
+            var header = document.createElement('div');
+            header.className = 'ltq-cat' + (catCollapsed[cat.key] ? ' collapsed' : '');
+            var nameEl = document.createElement('span');
+            nameEl.className = 'ltq-cat-name';
+            nameEl.textContent = isZh() ? cat.zh : cat.en;
+            var caret = document.createElement('span');
+            caret.className = 'ltq-cat-caret';
+            caret.textContent = '▾';
+            header.appendChild(nameEl);
+            header.appendChild(caret);
+            header.addEventListener('click', function() {
+                catCollapsed[cat.key] = !catCollapsed[cat.key];
+                rebuildActionGrid();
             });
-        } else {
-            // 单个分类 tab：只渲染该分类的网格（无分类头，更短）
-            var cat = ACTION_CATS.find(function(c) { return c.key === activePanelTab; });
-            if (cat) {
-                var items = orderedActions.filter(function(a) { return a.category === cat.key; });
-                var bodyWrap = document.createElement('div');
-                bodyWrap.className = 'ltq-grid';
-                items.forEach(function(a) { bodyWrap.appendChild(makeActionBtn(a)); });
-                actionGridEl.appendChild(bodyWrap);
-            }
-        }
+            actionGridEl.appendChild(header);
+
+            var bodyWrap = document.createElement('div');
+            bodyWrap.className = 'ltq-grid';
+            items.forEach(function(a) { bodyWrap.appendChild(makeActionBtn(a)); });
+            actionGridEl.appendChild(bodyWrap);
+        });
     }
 
     function showToolPanel() {
