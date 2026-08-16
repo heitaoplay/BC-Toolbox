@@ -84,11 +84,13 @@
     const CAT_TOGGLES_KEY   = '__toggles__';  // 开关区折叠状态在 catCollapsed 中的 key
     const DEFAULT_COLLAPSED = new Set(['magic', 'craft', 'boost']);
 
-    // 从 localStorage 读取分类折叠状态（容错：无记录 / 解析失败返回 {}）
+    // 从 localStorage 读取分类折叠状态
+    //   - 完全没有该 key 时返回 null（供初始化区分「首次使用」）
+    //   - key 存在（即使是 '{}' 全展开）时返回 JSON.parse 结果；解析失败 / 非对象则 {}
     function loadCatCollapsed() {
         try {
             const s = localStorage.getItem(STORAGE_CAT_COLLAPSED);
-            if (!s) return {};
+            if (s === null) return null;
             const obj = JSON.parse(s);
             if (obj && typeof obj === 'object') return obj;
         } catch (_) {}
@@ -99,11 +101,17 @@
         try { localStorage.setItem(STORAGE_CAT_COLLAPSED, JSON.stringify(catCollapsed)); } catch (_) {}
     }
 
-    // 初始化折叠状态：首次使用（localStorage 无记录）套用默认折叠，否则沿用已保存偏好
-    var catCollapsed = loadCatCollapsed();
-    if (Object.keys(catCollapsed).length === 0) {
+    // 初始化折叠状态：严格区分「首次无记录」与「已有记录（含 {} 全展开）」
+    //   - 首次（localStorage 无该 key）：套用默认折叠
+    //   - 已有记录（含 {} 全展开）：严格尊重存储，不再套默认覆盖用户偏好
+    var storedState = localStorage.getItem(STORAGE_CAT_COLLAPSED);
+    var catCollapsed;
+    if (storedState === null) {
+        catCollapsed = {};
         DEFAULT_COLLAPSED.forEach(function(k) { catCollapsed[k] = true; });
         catCollapsed[CAT_TOGGLES_KEY] = true;  // 开关区默认折叠
+    } else {
+        try { catCollapsed = JSON.parse(storedState) || {}; } catch (_) { catCollapsed = {}; }
     }
 
     // ════════════════════════════════════════════════════════════════════════
