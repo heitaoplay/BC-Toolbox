@@ -2,7 +2,7 @@
 // @name         BC工具箱
 // @name:zh      BC工具箱
 // @namespace    https://github.com/heitaoplay/BC-Toolbox
-// @version      3.3.0
+// @version      3.3.2
 // @description  BC 多功能工具箱 - BC工具箱 (R121 Compatible) + UI 面板 + 角色选择器 + Canvas SVG 图标 + 拖拽排序 + 主题自定义 + 自动解绑女仆
 // @author       heitaoplay
 // @include      /^https:\/\/(www\.)?bondage(projects\.elementfx|-(europe|asia))\.com\/.*/
@@ -30,16 +30,16 @@
     }
     window.__BCToolboxLoaded__ = true;
     let modApi = null;
-    const modversion = "3.3.0";
+    const modversion = "3.3.2";
 
     const rpBtnX    = 955;
     const rpBtnY    = 855;
     const rpBtnSize = 45;
     const rpIconUrl = "https://raw.githubusercontent.com/awdrrawd/liko-tool-Image-storage/refs/heads/main/Images/likorp.png";
 
-    /* ── UI 触发按钮位置 ── */
-    const TOOL_BTN_X = 955;
-    const TOOL_BTN_Y = 555;
+    /* ── UI 触发按钮位置（默认左上安全区，避开右侧聊天栏） ── */
+    const TOOL_BTN_X = 20;
+    const TOOL_BTN_Y = 60;
     const TOOL_BTN_W = 45;
     const TOOL_BTN_H = 45;
     const STORAGE_TOOL_BTN   = 'bcToolbox_float_btn';
@@ -868,9 +868,10 @@
             if (typeof window.LSCG === 'undefined' || !window.LSCG || typeof window.LSCG.getModule !== 'function') return;
             var iu = window.LSCG.getModule('ItemUseModule');
             var hy = window.LSCG.getModule('HypnoModule');
+            var lm = window.LSCG.getModule('LeashingModule');
             if (!iu || !hy) return;
             ensureMakeActivityCheckPatched();   // MakeActivityCheck 由合并 wrapper 统一处理
-            if (_superDice.iu === iu && iu.UnopposedActivityRoll && iu.UnopposedActivityRoll.__superDicePatched && iu.GetResistRoll && iu.GetResistRoll.__superDicePatched) return;
+            if (_superDice.iu === iu && iu.UnopposedActivityRoll && iu.UnopposedActivityRoll.__superDicePatched && hy.GetResistRoll && hy.GetResistRoll.__superDicePatched && lm && lm.IncomingEscape && lm.IncomingEscape.__ltSuperDiceEscapePatched) return;
 
             // MakeActivityCheck 已合并包裹（见上方 ensureMakeActivityCheckPatched），此处只处理其他两个 hook
 
@@ -889,6 +890,38 @@
                 return 100; // 智能：满值抵抗（内部判定，不显示于聊天），稳赢
             };
             hy.GetResistRoll.__superDicePatched = true;
+
+            // 挣扎反制：LSCG 的挣脱检定完全在挣扎者本地执行，控制方无法干预其 roll 点。
+            // 因此在控制方收到 escape 命令时，立即重新抓取对方，使对方无法真正脱离控制。
+            if (lm && (!lm.IncomingEscape || !lm.IncomingEscape.__ltSuperDiceEscapePatched)) {
+                var origEscape = lm.IncomingEscape;
+                lm.IncomingEscape = function (sender, escapeFromMemberNumber) {
+                    var senderMemberNumber = sender && sender.MemberNumber;
+                    var typesToRegrab = [];
+                    // 在移除前先记录被自己抓住的 grab 类型
+                    if (_superDice.enabled && senderMemberNumber && escapeFromMemberNumber == Player.MemberNumber && lm && lm.Leashings) {
+                        try {
+                            typesToRegrab = lm.Leashings
+                                .filter(function (p) { return p.IsSource && p.PairedMember === senderMemberNumber; })
+                                .map(function (p) { return p.Type; });
+                        } catch (e) {}
+                    }
+                    var ret = origEscape.call(this, sender, escapeFromMemberNumber);
+                    // 移除后立即重新抓回
+                    if (_superDice.enabled && typesToRegrab.length > 0) {
+                        try {
+                            var target = (typeof getCharacter === 'function') ? getCharacter(senderMemberNumber) : null;
+                            if (target) {
+                                typesToRegrab.forEach(function (type) {
+                                    try { lm.DoGrab(target, type); } catch (e) {}
+                                });
+                            }
+                        } catch (e) {}
+                    }
+                    return ret;
+                };
+                lm.IncomingEscape.__ltSuperDiceEscapePatched = true;
+            }
 
             _superDice.iu = iu;
             _superDice.hy = hy;
@@ -2672,6 +2705,7 @@
         if (!modApi) return;
         if (typeof window[functionName] === 'undefined') {
             console.warn("🐈‍⬛ [BC] ⚠️ " + functionName + " 不存在，跳过 hook");
+            console.log("🐈‍⬛ [BC] [hook-skipped] " + functionName);
             return;
         }
         try { modApi.hookFunction(functionName, priority, callback); }
@@ -3049,6 +3083,52 @@
             } catch (e) { /* ignore */ }
             return next(args);
         });
+
+        // ── 面板快捷键 + 拖拽兜底 ──
+        // 某些 BC 构建缺 window.MouseDown（safeHookFunction 会静默跳过），浮动按钮一旦位置
+        // 不可见就再也拖不回来。这里挂 Alt+T 切面板 + document 级鼠标兜底拖拽作双重保险。
+        (function bindPanelHotkeyAndDragFallback() {
+            document.addEventListener('keydown', function(e) {
+                if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && (e.key === 't' || e.key === 'T')) {
+                    var tag = e.target && e.target.tagName;
+                    if (tag === 'INPUT' || tag === 'TEXTAREA' || (e.target && e.target.isContentEditable)) return;
+                    e.preventDefault();
+                    toggleToolPanel();
+                }
+            });
+            var needFallback = typeof window.MouseDown === 'undefined'
+                || typeof window.MouseMove === 'undefined'
+                || typeof window.MouseUp === 'undefined';
+            if (!needFallback) return;
+            var maxX = (typeof MainCanvas !== 'undefined' && MainCanvas && MainCanvas.width) ? MainCanvas.width - TOOL_BTN_W : 1875;
+            var maxY = (typeof MainCanvas !== 'undefined' && MainCanvas && MainCanvas.height) ? MainCanvas.height - TOOL_BTN_H : 1035;
+            document.addEventListener('mousedown', function(e) {
+                if (typeof CurrentScreen === 'undefined' || CurrentScreen !== 'ChatRoom') return;
+                var x = (typeof MouseX !== 'undefined') ? MouseX : e.clientX;
+                var y = (typeof MouseY !== 'undefined') ? MouseY : e.clientY;
+                if (x >= toolBtnPos.x && x <= toolBtnPos.x + TOOL_BTN_W &&
+                    y >= toolBtnPos.y && y <= toolBtnPos.y + TOOL_BTN_H) {
+                    toolBtnDrag = { offX: x - toolBtnPos.x, offY: y - toolBtnPos.y, moved: false, sx: x, sy: y };
+                    e.preventDefault();
+                }
+            });
+            document.addEventListener('mousemove', function(e) {
+                if (!toolBtnDrag) return;
+                var x = (typeof MouseX !== 'undefined') ? MouseX : e.clientX;
+                var y = (typeof MouseY !== 'undefined') ? MouseY : e.clientY;
+                var dx = x - toolBtnDrag.sx, dy = y - toolBtnDrag.sy;
+                if (!toolBtnDrag.moved && (Math.abs(dx) + Math.abs(dy)) > 5) toolBtnDrag.moved = true;
+                toolBtnPos.x = Math.max(0, Math.min(maxX, toolBtnPos.x + dx));
+                toolBtnPos.y = Math.max(0, Math.min(maxY, toolBtnPos.y + dy));
+                toolBtnDrag.sx = x; toolBtnDrag.sy = y;
+            });
+            document.addEventListener('mouseup', function() {
+                if (!toolBtnDrag) return;
+                if (toolBtnDrag.moved) saveToolBtnPos();
+                toolBtnSuppressClick = toolBtnDrag.moved;
+                toolBtnDrag = null;
+            });
+        })();
     }
 
     // ──────────────────────────────────────────
