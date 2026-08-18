@@ -2,7 +2,7 @@
 // @name         BC工具箱
 // @name:zh      BC工具箱
 // @namespace    https://github.com/heitaoplay/BC-Toolbox
-// @version      3.3.2
+// @version      3.4.1
 // @description  BC 多功能工具箱 - BC工具箱 (R121 Compatible) + UI 面板 + 角色选择器 + Canvas SVG 图标 + 拖拽排序 + 主题自定义 + 自动解绑女仆
 // @author       heitaoplay
 // @include      /^https:\/\/(www\.)?bondage(projects\.elementfx|-(europe|asia))\.com\/.*/
@@ -30,7 +30,7 @@
     }
     window.__BCToolboxLoaded__ = true;
     let modApi = null;
-    const modversion = "3.4.0";
+    const modversion = "3.4.1";
 
     const rpBtnX    = 955;
     const rpBtnY    = 855;
@@ -4749,8 +4749,6 @@
                     drawCustomButton(this, btnX, btnY, 45, 45, hoverSpring.value, pressSpring.value);
                     return;
                 }
-                if (arguments.length <= 5) return origDrawImage.call(this, img, x, y, w, h);
-                if (arguments.length <= 9) return origDrawImage.call(this, img, x, y, w, h, dx, dy, dw, dh);
                 return origDrawImage.apply(this, arguments);
             };
             return true;
