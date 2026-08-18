@@ -30,7 +30,7 @@
     }
     window.__BCToolboxLoaded__ = true;
     let modApi = null;
-    const modversion = "3.3.2";
+    const modversion = "3.4.0";
 
     const rpBtnX    = 955;
     const rpBtnY    = 855;
@@ -218,7 +218,7 @@
 
     function applyTheme() {
         var preset = getAccentPreset();
-        var isDark = currentTheme.mode !== 'light';
+        var wantLight = (currentTheme.mode === 'light') || (currentTheme.mode === 'system' && !isSystemDark());
         var a = preset.accent;
         var ad = preset.accentDark;
         var al = preset.accentLight;
@@ -230,7 +230,7 @@
             document.head.appendChild(styleEl);
         }
 
-        if (isDark) {
+        if (!wantLight) {
             styleEl.textContent = [
                 '#lt-quick-panel,.lt-panel{',
                 '--lt-bg:rgba(12,16,26,0.98);',
@@ -281,9 +281,63 @@
         }
 
         document.querySelectorAll('#lt-quick-panel,.lt-panel').forEach(function(el) {
-            if (currentTheme.mode === 'light') el.classList.add('lt-light');
-            else el.classList.remove('lt-light');
+            el.classList.toggle('lt-light', wantLight);
+            el.classList.toggle('bct-light', wantLight);
         });
+
+        // 跟随系统：监听操作系统配色变化，仅当模式为 system 时联动
+        if (window.matchMedia && !applyTheme._sysBound) {
+            applyTheme._sysBound = true;
+            var _mql = window.matchMedia('(prefers-color-scheme: dark)');
+            var _onChange = function() { if (currentTheme.mode === 'system') applyTheme(); };
+            try { _mql.addEventListener('change', _onChange); }
+            catch (e) { try { _mql.addListener(_onChange); } catch (e2) {} }
+        }
+    }
+
+    function isSystemDark() {
+        return window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches;
+    }
+
+    function setThemeMode(mode) {
+        if (mode !== 'light' && mode !== 'dark' && mode !== 'system') return;
+        currentTheme.mode = mode;
+        saveTheme(currentTheme);
+        applyTheme();
+    }
+
+    // 三档主题旋钮（日间 / 夜间 / 跟随系统），替代原设置齿轮弹窗
+    function createThemeKnob() {
+        var MODES = [
+            { id: 'light',  label: '日间',     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="5"/><path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/></svg>' },
+            { id: 'dark',   label: '夜间',     icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>' },
+            { id: 'system', label: '跟随系统', icon: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="3" width="20" height="14" rx="2" ry="2"/><line x1="8" y1="21" x2="16" y2="21"/><line x1="12" y1="17" x2="12" y2="21"/></svg>' }
+        ];
+        var startIdx = MODES.findIndex(function(m) { return m.id === currentTheme.mode; });
+        if (startIdx < 0) startIdx = 1; // 默认夜间
+        var wrap = document.createElement('div');
+        wrap.className = 'bct-theme-knob pos-' + startIdx;
+        wrap.setAttribute('role', 'group');
+        wrap.setAttribute('aria-label', '主题模式');
+        var thumb = document.createElement('div');
+        thumb.className = 'bct-knob-thumb';
+        wrap.appendChild(thumb);
+        MODES.forEach(function(mode, i) {
+            var seg = document.createElement('button');
+            seg.className = 'bct-knob-seg' + (i === startIdx ? ' active' : '');
+            seg.type = 'button';
+            seg.title = mode.label;
+            seg.innerHTML = mode.icon;
+            seg.addEventListener('click', function() {
+                setThemeMode(mode.id);
+                wrap.className = 'bct-theme-knob pos-' + i;
+                wrap.querySelectorAll('.bct-knob-seg').forEach(function(s, idx) {
+                    s.classList.toggle('active', idx === i);
+                });
+            });
+            wrap.appendChild(seg);
+        });
+        return wrap;
     }
 
     // ════════════════════════════════════════════════════════════════════════
@@ -1796,17 +1850,15 @@
         var hdrBtns = document.createElement('div');
         hdrBtns.className = 'ltq-hdr-btns';
 
-        var settingsBtn = document.createElement('button');
-        settingsBtn.className = 'ltq-icon-btn';
-        settingsBtn.title = t('settingsTitle');
-        settingsBtn.innerHTML = SVG.settings;
+        // 三档主题旋钮（日间 / 夜间 / 跟随系统）替代原设置齿轮
+        var knob = createThemeKnob();
+        hdrBtns.appendChild(knob);
 
         var closeBtn = document.createElement('button');
         closeBtn.className = 'ltq-icon-btn';
         closeBtn.title = t('close');
         closeBtn.innerHTML = SVG.close;
 
-        hdrBtns.appendChild(settingsBtn);
         hdrBtns.appendChild(closeBtn);
         hdr.appendChild(titleSpan);
         hdr.appendChild(hdrBtns);
@@ -2072,12 +2124,6 @@
 
         // Apply theme class
         if (currentTheme.mode === 'light') toolPanelEl.classList.add('lt-light');
-
-        // ── Settings button ──
-        settingsBtn.addEventListener('click', function(e) {
-            e.stopPropagation();
-            openSettingsPanel();
-        });
 
         // ── Close button ──
         closeBtn.addEventListener('click', function(e) {
@@ -2381,7 +2427,10 @@
         applyTheme();
         const panel = document.createElement("div");
         panel.className = "lt-panel";
-        if (currentTheme.mode === 'light') panel.classList.add('lt-light');
+        if ((currentTheme.mode === 'light') || (currentTheme.mode === 'system' && !isSystemDark())) {
+            panel.classList.add('lt-light');
+            panel.classList.add('bct-light');
+        }
 
         const header = document.createElement("div");
         header.className = "lt-header";
@@ -3365,7 +3414,12 @@
     }
 
     function themeCommand() {
-        openSettingsPanel();
+        var order = ['light', 'dark', 'system'];
+        var idx = order.indexOf(currentTheme.mode);
+        if (idx < 0) idx = 1;
+        var next = order[(idx + 1) % order.length];
+        setThemeMode(next);
+        ChatRoomSendLocal('主题：' + (next === 'light' ? '日间' : next === 'dark' ? '夜间' : '跟随系统'));
         return true;
     }
 
@@ -4335,6 +4389,393 @@
     // ──────────────────────────────────────────
     // 主初始化
     // ──────────────────────────────────────────
+    // ════════════════════════════════════════════════════════════════════════
+    // 暖调重设计（v4.7）：注入 CSS（三档旋钮 + 暖调主题 + 动效）与 Canvas 扳手泛光动画
+    // ════════════════════════════════════════════════════════════════════════
+    function installWarmRedesignStyles() {
+        if (document.getElementById('bct-redesign')) return;
+        var s = document.createElement('style');
+        s.id = 'bct-redesign';
+        s.textContent = [
+            /* ── 暖调主题变量（覆盖工具自带 #lt-theme-vars，!important 防主题切换被冲掉） ── */
+            '#lt-quick-panel,.lt-panel{',
+            '  --lt-bg:rgba(26,22,20,0.82)!important;',
+            '  --lt-surface:rgba(255,240,225,0.05)!important;',
+            '  --lt-surface-2:rgba(255,240,225,0.09)!important;',
+            '  --lt-surface-hover:rgba(240,128,90,0.16)!important;',
+            '  --lt-border:rgba(255,240,225,0.10)!important;',
+            '  --lt-border-hover:rgba(240,128,90,0.50)!important;',
+            '  --lt-text:#f1e9dd!important;',
+            '  --lt-text-secondary:#d8cdbd!important;',
+            '  --lt-text-dim:#a99e8f!important;',
+            '  --lt-text-faint:#7c7264!important;',
+            '  --lt-accent:#f0805a!important;',
+            '  --lt-accent-dark:#b85a3c!important;',
+            '  --lt-accent-light:#ff9b76!important;',
+            '  --lt-accent-glow:rgba(240,128,90,0.42)!important;',
+            '  --lt-header-grad:linear-gradient(102deg,#2a221d 0%,#3a2a22 58%,rgba(240,128,90,0.38) 100%)!important;',
+            '  --lt-shadow:rgba(0,0,0,0.70)!important;',
+            '  --lt-scrollbar:rgba(240,128,90,0.55)!important;',
+            '  --lt-switch-on:#f0805a!important;',
+            '  --lt-switch-glow:rgba(240,128,90,0.60)!important;',
+            '}',
+            /* ── 日间模式变量（.bct-light 优先级更高，覆盖上方深色变量）── */
+            '#lt-quick-panel.bct-light,.lt-panel.bct-light{',
+            '  --lt-bg:rgba(250,246,240,0.96)!important;',
+            '  --lt-surface:rgba(0,0,0,0.03)!important;',
+            '  --lt-surface-2:rgba(0,0,0,0.06)!important;',
+            '  --lt-surface-hover:rgba(240,128,90,0.12)!important;',
+            '  --lt-border:rgba(0,0,0,0.08)!important;',
+            '  --lt-border-hover:rgba(240,128,90,0.45)!important;',
+            '  --lt-text:#2e2620!important;',
+            '  --lt-text-secondary:#5a5048!important;',
+            '  --lt-text-dim:#8a8078!important;',
+            '  --lt-text-faint:#b0a8a0!important;',
+            '  --lt-accent:#f0805a!important;',
+            '  --lt-accent-dark:#b85a3c!important;',
+            '  --lt-accent-light:#ff9b76!important;',
+            '  --lt-accent-glow:rgba(240,128,90,0.30)!important;',
+            '  --lt-header-grad:linear-gradient(102deg,#f5ede4 0%,#f8e6dc 58%,rgba(240,128,90,0.25) 100%)!important;',
+            '  --lt-shadow:rgba(0,0,0,0.15)!important;',
+            '  --lt-scrollbar:rgba(240,128,90,0.50)!important;',
+            '  --lt-switch-on:#f0805a!important;',
+            '  --lt-switch-glow:rgba(240,128,90,0.50)!important;',
+            '}',
+            '#lt-quick-panel.bct-light .ltq-title{color:#2e2620!important;}',
+            '#lt-quick-panel.bct-light .lt-mode-pop{background:linear-gradient(180deg,#faf6f0,#f0eae2)!important;border-color:rgba(240,128,90,0.35)!important;box-shadow:0 18px 44px rgba(0,0,0,0.22)!important;}',
+            '#lt-quick-panel.bct-light .lt-mode-pop .lt-mode-item{color:#5a5048!important;}',
+            '#lt-quick-panel.bct-light .lt-mode-pop .lt-mode-item:hover{color:#2e2620!important;background:rgba(240,128,90,0.12)!important;}',
+            /* ── 面板：更大圆角 + 软 3D 浮起 ── */
+            '#lt-quick-panel{',
+            '  border-radius:22px!important;',
+            '  background:var(--lt-bg)!important;',
+            '  border:1px solid var(--lt-border)!important;',
+            '  box-shadow:0 1px 0 rgba(255,255,255,0.05) inset, 0 30px 70px -24px rgba(0,0,0,0.72)!important;',
+            '}',
+            /* ── 打开方式：快速「淡入 + 上滑」，不再缩放 ── */
+            '#lt-quick-panel{',
+            '  opacity:0!important;',
+            '  transform:translateY(14px) scale(0.99)!important;',
+            '  pointer-events:none!important;',
+            '  transition:opacity .14s ease, transform .22s cubic-bezier(.22,1,.36,1)!important;',
+            '}',
+            '#lt-quick-panel.show{',
+            '  opacity:1!important;',
+            '  transform:translateY(0) scale(1)!important;',
+            '  pointer-events:auto!important;',
+            '}',
+            /* ── 头部标题色（在暖渐变上更暖白） ── */
+            '#lt-quick-panel .ltq-hdr .ltq-title{color:#fff8f1!important;}',
+            /* ── 动作按钮：大圆角 + hover 弹簧上浮 + 珊瑚左条发光 + 按下即时缩 ── */
+            '#lt-quick-panel .ltq-action{',
+            '  border-radius:14px!important;',
+            '  transition:transform .26s cubic-bezier(.34,1.56,.64,1), background .18s ease, border-color .18s ease, box-shadow .26s ease!important;',
+            '}',
+            '#lt-quick-panel .ltq-action::before{opacity:.22!important;}',
+            '#lt-quick-panel .ltq-action:hover{',
+            '  transform:translateY(-2px)!important;',
+            '  border-color:var(--lt-accent)!important;',
+            '  box-shadow:0 6px 16px -6px var(--lt-accent-glow), 0 1px 0 rgba(255,255,255,0.05) inset!important;',
+            '}',
+            '#lt-quick-panel .ltq-action:hover::before{opacity:.7!important;}',
+            '#lt-quick-panel .ltq-action:active{transform:scale(.97)!important; transition:transform .1s ease-out!important;}',
+            /* ── 开关：spring 回弹（更大白点 + overshoot） ── */
+            '#lt-quick-panel .ltq-switch{transition:background .42s cubic-bezier(.34,1.56,.64,1)!important;}',
+            '#lt-quick-panel .ltq-switch::after{',
+            '  top:1px!important; left:1px!important; width:18px!important; height:18px!important;',
+            '  transition:all .42s cubic-bezier(.34,1.56,.64,1)!important;',
+            '}',
+            '#lt-quick-panel .ltq-switch.on{background:var(--lt-switch-on)!important; box-shadow:inset 0 1px 2px rgba(0,0,0,0.2), 0 0 10px var(--lt-switch-glow)!important;}',
+            '#lt-quick-panel .ltq-switch.on::after{left:17px!important;}',
+            /* ── 开关行：开启态珊瑚左条 ── */
+            '#lt-quick-panel .ltq-toggle.on{box-shadow:inset 0 1px 0 rgba(255,255,255,0.04), inset 3px 0 0 var(--lt-accent)!important;}',
+            /* ── 分类折叠箭头：弹簧旋转 ── */
+            '#lt-quick-panel .ltq-cat-caret{transition:transform .32s cubic-bezier(.34,1.56,.64,1)!important;}',
+            /* ── 超级骰子模式药丸：非激活态补暖调底色 ── */
+            '#lt-quick-panel .ltq-mode-pill:not(.c){background:var(--lt-surface-2)!important;border:1px solid var(--lt-border)!important;color:var(--lt-text-secondary)!important;}',
+            '#lt-quick-panel .ltq-mode-pill.open:not(.c){border-color:var(--lt-accent)!important;}',
+            /* ── 超级骰子二级弹窗：把硬编码紫色换成暖调 + 轻量弹入 ── */
+            '.lt-mode-pop{',
+            '  background:linear-gradient(180deg,#2a2018,#1c1612)!important;',
+            '  border:1px solid var(--lt-border-hover,rgba(240,128,90,0.4))!important;',
+            '  border-radius:14px!important;',
+            '  box-shadow:0 18px 44px rgba(0,0,0,0.6)!important;',
+            '  animation:bct-mode-in .16s cubic-bezier(.22,1,.36,1)!important;',
+            '}',
+            "@keyframes bct-mode-in{from{opacity:0;transform:translateY(-6px) scale(.96);}to{opacity:1;transform:translateY(0) scale(1);}}",
+            '.lt-mode-pop .lt-mode-item{color:var(--lt-text-secondary,#d8cdbd)!important;}',
+            '.lt-mode-pop .lt-mode-item:hover{background:var(--lt-surface-hover,rgba(240,128,90,0.16))!important;color:#fff!important;}',
+            '.lt-mode-pop .lt-mode-item.sel{background:var(--lt-surface-hover,rgba(240,128,90,0.16))!important;color:#fff!important;box-shadow:inset 0 0 0 1px var(--lt-accent,#f0805a)!important;}',
+            '.lt-mode-pop .lt-mode-item .lt-mode-sub{color:var(--lt-text-faint,#7c7264)!important;}',
+            /* ── Toast：暖调圆角 + 软阴影 ── */
+            '.lt-panel{border-radius:14px!important; border:1px solid var(--lt-border)!important; box-shadow:0 1px 0 rgba(255,255,255,0.05) inset, 0 30px 70px -24px rgba(0,0,0,0.72)!important;}',
+            /* ── 主题三档旋钮（替代原设置弹窗）── */
+            '.bct-theme-knob{position:relative;width:78px;height:26px;background:rgba(0,0,0,0.35);border-radius:13px;border:1px solid rgba(255,255,255,0.10);box-shadow:inset 0 1px 3px rgba(0,0,0,0.4);display:flex;cursor:pointer;-webkit-tap-highlight-color:transparent;}',
+            '#lt-quick-panel.bct-light .bct-theme-knob{background:rgba(0,0,0,0.06);border-color:rgba(0,0,0,0.12);box-shadow:inset 0 1px 3px rgba(0,0,0,0.08);}',
+            '.bct-theme-knob .bct-knob-seg{flex:1;display:flex;align-items:center;justify-content:center;z-index:1;padding:0;background:transparent;border:none;cursor:pointer;}',
+            '.bct-theme-knob .bct-knob-seg svg{width:13px;height:13px;stroke:rgba(255,255,255,0.55);fill:none;transition:stroke .2s ease;}',
+            '#lt-quick-panel.bct-light .bct-theme-knob .bct-knob-seg svg{stroke:rgba(90,80,72,0.55);}',
+            '.bct-theme-knob .bct-knob-seg.active svg{stroke:#fff8f1;}',
+            '#lt-quick-panel.bct-light .bct-theme-knob .bct-knob-seg.active svg{stroke:#2e2620;}',
+            '.bct-theme-knob .bct-knob-thumb{position:absolute;top:2px;left:2px;width:22px;height:22px;border-radius:50%;background:linear-gradient(180deg,#ff9b76,#b85a3c);box-shadow:0 2px 6px rgba(240,128,90,0.45),inset 0 1px 0 rgba(255,255,255,0.25);transition:transform .35s cubic-bezier(.34,1.56,.64,1);z-index:0;}',
+            '.bct-theme-knob.pos-0 .bct-knob-thumb{transform:translateX(0);}',
+            '.bct-theme-knob.pos-1 .bct-knob-thumb{transform:translateX(26px);}',
+            '.bct-theme-knob.pos-2 .bct-knob-thumb{transform:translateX(52px);}',
+            '.bct-theme-knob .bct-knob-seg:focus-visible{outline:none;}',
+            '.bct-theme-knob .bct-knob-seg:focus-visible svg{stroke:var(--lt-accent,#f0805a)!important;}',
+            '@media (prefers-reduced-motion: reduce){',
+            '  #lt-quick-panel,#lt-quick-panel.show{transition:opacity .16s ease!important; transform:none!important;}',
+            '  .lt-mode-pop{animation:none!important;}',
+            '  #lt-quick-panel .ltq-action:hover,#lt-quick-panel .ltq-switch.on::after{transform:none!important;}',
+            '}'
+        ].join('\n');
+        document.head.appendChild(s);
+    }
+
+    // 原生悬浮按钮 Canvas 自定义绘制（v4.7）：spring 跟手 hover + 按下反馈 + 扳手泛光动画
+    // 绘制策略：hook HTMLCanvasElement.prototype.getContext，从源头捕获绘图 context，
+    // 在工具箱绘制 24×24 扳手图标（特征 M14.7%206.3）时跳过原绘制并覆盖整个暖调按钮。
+    function installWarmCanvasButton() {
+        var DT = 1 / 60;
+
+        function Spring(value, tension, friction) {
+            this.value = value;
+            this.target = value;
+            this.vel = 0;
+            this.tension = tension;
+            this.friction = friction;
+        }
+        Spring.prototype.setTarget = function (t) { this.target = t; };
+        Spring.prototype.update = function (dt) {
+            var force = (this.target - this.value) * this.tension;
+            this.vel += force * dt;
+            this.vel *= Math.max(0, 1 - this.friction * dt);
+            this.value += this.vel * dt;
+        };
+
+        var hoverSpring = new Spring(0, 380, 32);
+        var pressSpring = new Spring(0, 900, 38);
+        var currentBtnRect = null;
+        var isPointerDown = false;
+
+        function hexToRgb(hex) {
+            var m = /^#?([a-f\d]{2})([a-f\d]{2})([a-f\d]{2})$/i.exec(hex);
+            return m ? [parseInt(m[1], 16), parseInt(m[2], 16), parseInt(m[3], 16)] : [0, 0, 0];
+        }
+
+        function lerpColor(a, b, t) {
+            var ca = hexToRgb(a), cb = hexToRgb(b);
+            var r = Math.round(ca[0] + (cb[0] - ca[0]) * t);
+            var g = Math.round(ca[1] + (cb[1] - ca[1]) * t);
+            var bl = Math.round(ca[2] + (cb[2] - ca[2]) * t);
+            return 'rgb(' + r + ',' + g + ',' + bl + ')';
+        }
+
+        function roundRect(ctx, x, y, w, h, r) {
+            ctx.beginPath();
+            ctx.moveTo(x + r, y);
+            ctx.lineTo(x + w - r, y);
+            ctx.quadraticCurveTo(x + w, y, x + w, y + r);
+            ctx.lineTo(x + w, y + h - r);
+            ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+            ctx.lineTo(x + r, y + h);
+            ctx.quadraticCurveTo(x, y + h, x, y + h - r);
+            ctx.lineTo(x, y + r);
+            ctx.quadraticCurveTo(x, y, x + r, y);
+            ctx.closePath();
+        }
+
+        function updateBtnRect(btnX, btnY, btnW, btnH) {
+            currentBtnRect = { x: btnX, y: btnY, w: btnW, h: btnH };
+        }
+
+        function isOverBtn(mx, my) {
+            if (!currentBtnRect) return false;
+            return mx >= currentBtnRect.x && mx <= currentBtnRect.x + currentBtnRect.w &&
+                   my >= currentBtnRect.y && my <= currentBtnRect.y + currentBtnRect.h;
+        }
+
+        function setupPointerListeners() {
+            var cvs = window.MainCanvas;
+            if (!cvs || cvs.__bct_pointer_listeners) return;
+            cvs.__bct_pointer_listeners = true;
+
+            function getCanvasXY(e) {
+                var rect = cvs.getBoundingClientRect();
+                var scaleX = cvs.width / rect.width || 1;
+                var scaleY = cvs.height / rect.height || 1;
+                var clientX = e.clientX, clientY = e.clientY;
+                if (e.touches && e.touches.length) {
+                    clientX = e.touches[0].clientX;
+                    clientY = e.touches[0].clientY;
+                } else if (e.changedTouches && e.changedTouches.length) {
+                    clientX = e.changedTouches[0].clientX;
+                    clientY = e.changedTouches[0].clientY;
+                }
+                return { x: (clientX - rect.left) * scaleX, y: (clientY - rect.top) * scaleY };
+            }
+
+            function onDown(e) {
+                var p = getCanvasXY(e);
+                if (isOverBtn(p.x, p.y)) isPointerDown = true;
+            }
+            function onUp() { isPointerDown = false; }
+
+            cvs.addEventListener('mousedown', onDown);
+            window.addEventListener('mouseup', onUp);
+            cvs.addEventListener('touchstart', onDown, { passive: true });
+            window.addEventListener('touchend', onUp);
+        }
+
+        function drawCustomButton(ctx, btnX, btnY, btnW, btnH, hoverT, pressT) {
+            ctx.save();
+
+            roundRect(ctx, btnX, btnY, btnW, btnH, 12);
+            ctx.clip();
+
+            var btnScale = 1 - pressT * 0.06;
+            if (btnScale !== 1) {
+                ctx.translate(btnX + btnW / 2, btnY + btnH / 2);
+                ctx.scale(btnScale, btnScale);
+                ctx.translate(-(btnX + btnW / 2), -(btnY + btnH / 2));
+            }
+
+            var grad = ctx.createLinearGradient(btnX, btnY, btnX, btnY + btnH);
+            grad.addColorStop(0, lerpColor('#251e1b', '#ff9b76', hoverT));
+            grad.addColorStop(1, lerpColor('#15110f', '#b85a3c', hoverT));
+
+            ctx.shadowColor = 'rgba(240,128,90,' + (0.15 + hoverT * 0.22) + ')';
+            ctx.shadowBlur = 2 + hoverT * 3;
+            ctx.shadowOffsetY = 1 + hoverT * 1;
+
+            roundRect(ctx, btnX, btnY, btnW, btnH, 12);
+            ctx.fillStyle = grad;
+            ctx.fill();
+
+            ctx.shadowColor = 'transparent';
+            var innerGrad = ctx.createRadialGradient(btnX + btnW / 2, btnY + btnH / 2, 2, btnX + btnW / 2, btnY + btnH / 2, btnW * 0.7);
+            innerGrad.addColorStop(0, 'rgba(0,0,0,0)');
+            innerGrad.addColorStop(1, 'rgba(0,0,0,' + (0.28 - hoverT * 0.22) + ')');
+            ctx.fillStyle = innerGrad;
+            roundRect(ctx, btnX, btnY, btnW, btnH, 12);
+            ctx.fill();
+
+            var dotX = btnX + btnW - 8;
+            var dotY = btnY + btnH - 8;
+            var glowR = hoverT * btnW * 1.25;
+            if (glowR > 0.5) {
+                var glow = ctx.createRadialGradient(dotX, dotY, 0, dotX, dotY, glowR);
+                glow.addColorStop(0, 'rgba(255,155,118,' + (0.55 * hoverT) + ')');
+                glow.addColorStop(0.45, 'rgba(240,128,90,' + (0.28 * hoverT) + ')');
+                glow.addColorStop(1, 'rgba(240,128,90,0)');
+                ctx.fillStyle = glow;
+                ctx.beginPath();
+                ctx.arc(dotX, dotY, glowR, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            roundRect(ctx, btnX + 0.5, btnY + 0.5, btnW - 1, btnH - 1, 11);
+            var borderA = 0.22 + hoverT * 0.35;
+            var borderR = Math.round(240 + (255 - 240) * hoverT);
+            var borderG = Math.round(128 + (155 - 128) * hoverT);
+            var borderB = Math.round(90 + (118 - 90) * hoverT);
+            ctx.strokeStyle = 'rgba(' + borderR + ',' + borderG + ',' + borderB + ',' + borderA + ')';
+            ctx.lineWidth = 1.2;
+            ctx.stroke();
+
+            var hi = ctx.createLinearGradient(btnX, btnY + 1, btnX, btnY + 8);
+            hi.addColorStop(0, 'rgba(255,255,255,' + (0.14 + hoverT * 0.08) + ')');
+            hi.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = hi;
+            roundRect(ctx, btnX + 2, btnY + 1.5, btnW - 4, 7, 4);
+            ctx.fill();
+
+            ctx.save();
+            var cx = btnX + btnW / 2, cy = btnY + btnH / 2;
+            var iconScale = 1 + hoverT * 0.12 - pressT * 0.04;
+            var iconRot = hoverT * 0.18;
+            var iconLift = hoverT * -1.5;
+            var iconOpacity = 1 - hoverT * 0.35;
+            ctx.translate(cx, cy + iconLift);
+            ctx.rotate(iconRot);
+            ctx.scale(iconScale, iconScale);
+            ctx.translate(-12, -12);
+
+            var wrench = new Path2D('M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z');
+
+            ctx.globalAlpha = iconOpacity;
+            ctx.shadowColor = 'rgba(0,0,0,' + (0.2 + pressT * 0.2) * hoverT + ')';
+            ctx.shadowBlur = 3 * hoverT;
+            ctx.fillStyle = lerpColor('#fff8f1', '#2e2620', hoverT);
+            ctx.fill(wrench);
+            ctx.globalAlpha = 1;
+            ctx.shadowColor = 'transparent';
+
+            ctx.restore();
+
+            ctx.beginPath();
+            ctx.arc(dotX, dotY, 3 + hoverT * 0.8, 0, Math.PI * 2);
+            ctx.fillStyle = '#f0805a';
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(255,255,255,0.55)';
+            ctx.lineWidth = 0.8;
+            ctx.stroke();
+
+            ctx.restore();
+        }
+
+        function hookDrawImage(ctx) {
+            if (!ctx || typeof ctx.drawImage !== 'function' || ctx.__bct_drawImage_orig) {
+                return false;
+            }
+            var origDrawImage = ctx.drawImage;
+            ctx.__bct_drawImage_orig = origDrawImage;
+
+            ctx.drawImage = function (img, x, y, w, h, dx, dy, dw, dh) {
+                if (arguments.length === 5 && img && img.src && typeof img.src === 'string' &&
+                    img.src.indexOf('M14.7%206.3') !== -1 && w === 24 && h === 24) {
+                    var btnX = x - 10.5;
+                    var btnY = y - 10.5;
+                    var mx = window.MouseX || 0, my = window.MouseY || 0;
+                    var hover = mx >= btnX && mx <= btnX + 45 && my >= btnY && my <= btnY + 45 && !window.CommonIsMobile;
+
+                    hoverSpring.setTarget(hover ? 1 : 0);
+                    pressSpring.setTarget((hover && isPointerDown) ? 1 : 0);
+                    hoverSpring.update(DT);
+                    pressSpring.update(DT);
+                    updateBtnRect(btnX, btnY, 45, 45);
+                    setupPointerListeners();
+
+                    drawCustomButton(this, btnX, btnY, 45, 45, hoverSpring.value, pressSpring.value);
+                    return;
+                }
+                if (arguments.length <= 5) return origDrawImage.call(this, img, x, y, w, h);
+                if (arguments.length <= 9) return origDrawImage.call(this, img, x, y, w, h, dx, dy, dw, dh);
+                return origDrawImage.apply(this, arguments);
+            };
+            return true;
+        }
+
+        if (typeof HTMLCanvasElement !== 'undefined' && HTMLCanvasElement.prototype.getContext) {
+            var proto = HTMLCanvasElement.prototype;
+            var origGetContext = proto.getContext;
+            proto.getContext = function (type) {
+                var ctx = origGetContext.apply(this, arguments);
+                if (type && String(type).indexOf('2d') !== -1 && ctx && typeof ctx.drawImage === 'function') {
+                    try { hookDrawImage(ctx); } catch (e) {}
+                }
+                return ctx;
+            };
+        }
+
+        if (window.MainCanvas && typeof window.MainCanvas.getContext === 'function') {
+            try {
+                var mcCtx = window.MainCanvas.getContext('2d');
+                hookDrawImage(mcCtx);
+            } catch (e) {}
+        }
+    }
+
     async function initialize() {
         console.log("🐈‍⬛ [BC] ⌛ 开始初始化插件...");
         await initializeModApi();
@@ -4346,6 +4787,8 @@
 
         initializeStorage();
         applyTheme();
+        installWarmRedesignStyles();
+        installWarmCanvasButton();
         setupHooks();
 
         const registerCommand = () => {
