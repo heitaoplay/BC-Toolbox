@@ -2,7 +2,7 @@
 // @name         BC工具箱
 // @name:zh      BC工具箱
 // @namespace    https://github.com/heitaoplay/BC-Toolbox
-// @version      3.4.1
+// @version      3.4.2
 // @description  BC 多功能工具箱 - BC工具箱 (R121 Compatible) + UI 面板 + 角色选择器 + Canvas SVG 图标 + 拖拽排序 + 主题自定义 + 自动解绑女仆
 // @author       heitaoplay
 // @include      /^https:\/\/(www\.)?bondage(projects\.elementfx|-(europe|asia))\.com\/.*/
@@ -30,7 +30,7 @@
     }
     window.__BCToolboxLoaded__ = true;
     let modApi = null;
-    const modversion = "3.4.1";
+    const modversion = "3.4.2";
 
     const rpBtnX    = 955;
     const rpBtnY    = 855;
@@ -507,7 +507,8 @@
                 "/bc editcraft [目标]  - 批量编辑束缚的订制属性（名称/描述/私有）\n" +
                 "/bc clearcraft [目标] - 清除束缚的所有订制属性\n" +
                 "/bc wardrobe          - 开启衣柜\n" +
-                "/bc theme             - 打开主题设置",
+                "/bc theme             - 打开主题设置\n" +
+                "/bc diag              - 自检超级骰子/守护常驻接线状态（排查失效用）",
 
             loaded: "BC工具箱 v{v} 载入！使用 /bc help 查看说明",
         },
@@ -635,7 +636,8 @@
                 "/bc editcraft [target]- Batch-edit restraint craft (name/desc/private)\n" +
                 "/bc clearcraft [target]-Clear all craft on restraints\n" +
                 "/bc wardrobe          - Open wardrobe\n" +
-                "/bc theme             - Open theme settings",
+                "/bc theme             - Open theme settings\n" +
+                "/bc diag              - Self-check Super Dice / Guard wiring (troubleshooting)",
 
             loaded: "BC工具箱 v{v} loaded! Use /bc help for help",
         }
@@ -925,25 +927,35 @@
             var lm = window.LSCG.getModule('LeashingModule');
             if (!iu || !hy) return;
             ensureMakeActivityCheckPatched();   // MakeActivityCheck 由合并 wrapper 统一处理
-            if (_superDice.iu === iu && iu.UnopposedActivityRoll && iu.UnopposedActivityRoll.__superDicePatched && hy.GetResistRoll && hy.GetResistRoll.__superDicePatched && lm && lm.IncomingEscape && lm.IncomingEscape.__ltSuperDiceEscapePatched) return;
 
-            // MakeActivityCheck 已合并包裹（见上方 ensureMakeActivityCheckPatched），此处只处理其他两个 hook
+            // MakeActivityCheck 已合并包裹（见上方 ensureMakeActivityCheckPatched），此处只处理其他三个 hook。
+            // 三个 hook 各自独立判断幂等：原先用一个 && 串起来，末尾的 lm 条件在老版 LSCG
+            // （无 LeashingModule）下恒为 false，导致前两个 hook 每 2 秒被重复包裹一次，
+            // 调用链不断套娃，最终 Maximum call stack size exceeded，表现为功能整体失效。
+            var unopDone   = (_superDice.iu === iu) && iu.UnopposedActivityRoll && iu.UnopposedActivityRoll.__superDicePatched;
+            var resistDone = (_superDice.hy === hy) && hy.GetResistRoll && hy.GetResistRoll.__superDicePatched;
+            var escapeDone = !lm || (lm.IncomingEscape && lm.IncomingEscape.__ltSuperDiceEscapePatched);
+            if (unopDone && resistDone && escapeDone) return;
 
-            var origUnop = iu.UnopposedActivityRoll;
-            iu.UnopposedActivityRoll = function (C) {
-                var roll = origUnop.call(this, C);
-                if (_superDice.enabled) { try { if (C && Player && C === Player && roll) applySuperDiceRoll(roll, 0, true); } catch (e) {} }
-                return roll;
-            };
-            iu.UnopposedActivityRoll.__superDicePatched = true;
+            if (!unopDone && iu.UnopposedActivityRoll && !iu.UnopposedActivityRoll.__superDicePatched) {
+                var origUnop = iu.UnopposedActivityRoll;
+                iu.UnopposedActivityRoll = function (C) {
+                    var roll = origUnop.call(this, C);
+                    if (_superDice.enabled) { try { if (C && Player && C === Player && roll) applySuperDiceRoll(roll, 0, true); } catch (e) {} }
+                    return roll;
+                };
+                iu.UnopposedActivityRoll.__superDicePatched = true;
+            }
 
-            var origResist = hy.GetResistRoll;
-            hy.GetResistRoll = function () {
-                if (!_superDice.enabled) return origResist.call(this);
-                if (_superDice.mode === 'C') return Infinity; // ∞ 伪装
-                return 100; // 智能：满值抵抗（内部判定，不显示于聊天），稳赢
-            };
-            hy.GetResistRoll.__superDicePatched = true;
+            if (!resistDone && hy.GetResistRoll && !hy.GetResistRoll.__superDicePatched) {
+                var origResist = hy.GetResistRoll;
+                hy.GetResistRoll = function () {
+                    if (!_superDice.enabled) return origResist.call(this);
+                    if (_superDice.mode === 'C') return Infinity; // ∞ 伪装
+                    return 100; // 智能：满值抵抗（内部判定，不显示于聊天），稳赢
+                };
+                hy.GetResistRoll.__superDicePatched = true;
+            }
 
             // 挣扎反制：LSCG 的挣脱检定完全在挣扎者本地执行，控制方无法干预其 roll 点。
             // 因此在控制方收到 escape 命令时，立即重新抓取对方，使对方无法真正脱离控制。
@@ -999,6 +1011,128 @@
             _superDice.mode = (c === 'C') ? 'C' : 'A';
         } catch (e) {}
         if (typeof window.__LT_updateToggles === 'function') window.__LT_updateToggles();
+    }
+
+    // ──────────────────────────────────────────
+    // 开关状态同步（修复「UI 显示已开、功能却无效」）
+    //   背景：文件底部的启动同步位于 IIFE 同步段，必然早于 initialize() 里的
+    //   「等待玩家登录」。那时 Player.ExtensionSettings 还没从服务器载入，
+    //   getES() 会凭空建出一个默认值对象（superDice: 0），内存标志因此恒为 false；
+    //   而 _superDice.enabled 原本只在「用户点开关」时才会再赋值，所以一旦启动
+    //   这一刻读错，就再也恢复不了 —— 必须手动点两下开关才生效。
+    //   修复：登录完成后再同步一次，并让 2 秒心跳持续对齐，任何时序丢失都能自愈。
+    // ──────────────────────────────────────────
+    function syncToggleStates() {
+        // 玩家未登录时直接跳过，不去读存档。原因是那时 ExtensionSettings 还没从服务器
+        // 载入，getES() 会凭空建出一个默认值对象（superDice:0），把真实的开启状态冲掉 ——
+        // 这正是原 bug 的成因。未登录就等 initialize() 登录完成后那次同步来接手。
+        try {
+            if (typeof Player === 'undefined' || !Player || typeof Player.MemberNumber !== 'number') return;
+        } catch (e) { return; }
+        try { _superDice.enabled = getSuperDice(); _superDice.mode = getSuperDiceMode(); } catch (e) {}
+        try { _guard.enabled = getGuard(); } catch (e) {}
+    }
+
+    // ──────────────────────────────────────────
+    // 自检诊断：一键看清超级骰子 / 守护常驻的接线状态
+    //   不用逐个进游戏测功能，直接在控制台跑 __LT_DEBUG.diagnose() 即可。
+    //   会列出 LSCG 是否装载、三个模块能否取到、四个 hook 是否已打补丁，
+    //   以及「内存标志」与「存档配置」是否一致 —— LSCG 升级改接口时会立刻暴露。
+    // ──────────────────────────────────────────
+    function diagnoseSuperDice() {
+        var r = {
+            ok: true,
+            issues: [],
+            lscg: { present: false, version: null, modules: {}, hooks: {} },
+            superDice: { saved: null, inMemory: null, modeInMemory: null },
+            guard: { saved: null, inMemory: null }
+        };
+        try {
+            var L = (typeof window !== 'undefined') ? window.LSCG : null;
+            r.lscg.present = !!(L && typeof L.getModule === 'function');
+            if (!r.lscg.present) {
+                r.ok = false;
+                r.issues.push('LSCG 未装载或 getModule 不可用 —— 超级骰子完全不会生效（本插件依赖 LSCG 的检定接口）');
+                return r;
+            }
+            // LSCG 版本：不同版本字段名不一，尽力多探几个
+            r.lscg.version = (L.Version || L.version || (L.TEAL && L.TEAL.Version) || null);
+
+            ['ItemUseModule', 'HypnoModule', 'LeashingModule', 'StateModule'].forEach(function (name) {
+                var m = null;
+                try { m = L.getModule(name); } catch (e) {}
+                r.lscg.modules[name] = !!m;
+            });
+
+            var iu = null, hy = null, lm = null;
+            try { iu = L.getModule('ItemUseModule'); } catch (e) {}
+            try { hy = L.getModule('HypnoModule'); } catch (e) {}
+            try { lm = L.getModule('LeashingModule'); } catch (e) {}
+
+            var hookTable = [
+                ['ItemUseModule.MakeActivityCheck',    iu && iu.MakeActivityCheck,    function (f) { return !!f[LT_MAKE_PATCHED]; }],
+                ['ItemUseModule.UnopposedActivityRoll', iu && iu.UnopposedActivityRoll, function (f) { return !!f.__superDicePatched; }],
+                ['HypnoModule.GetResistRoll',          hy && hy.GetResistRoll,        function (f) { return !!f.__superDicePatched; }],
+                ['LeashingModule.IncomingEscape',      lm && lm.IncomingEscape,       function (f) { return !!f.__ltSuperDiceEscapePatched; }]
+            ];
+            hookTable.forEach(function (row) {
+                var label = row[0], fn = row[1], test = row[2];
+                if (!fn) { r.lscg.hooks[label] = 'MISSING'; return; }
+                r.lscg.hooks[label] = test(fn) ? 'PATCHED' : 'NOT_PATCHED';
+            });
+
+            Object.keys(r.lscg.hooks).forEach(function (k) {
+                if (r.lscg.hooks[k] === 'MISSING') {
+                    // LeashingModule 在老版 LSCG 里可能没有，只影响「挣脱后重抓」，不算致命
+                    if (k.indexOf('Leashing') === 0) r.issues.push('可选接口缺失：' + k + '（老版 LSCG）→ 仅「挣脱后立刻重抓」不可用，其余正常');
+                    else r.ok = false, r.issues.push('接口缺失：' + k + ' —— LSCG 可能已升级改名，需要同步修改本脚本');
+                } else if (r.lscg.hooks[k] === 'NOT_PATCHED') {
+                    r.ok = false;
+                    r.issues.push('接口存在但未打补丁：' + k + ' —— 心跳未能安装 hook（查看控制台是否有报错）');
+                }
+            });
+
+            // 内存标志 vs 存档配置
+            r.superDice.saved = getSuperDice();
+            r.superDice.inMemory = !!_superDice.enabled;
+            r.superDice.modeInMemory = _superDice.mode;
+            r.guard.saved = getGuard();
+            r.guard.inMemory = !!_guard.enabled;
+
+            if (r.superDice.saved !== r.superDice.inMemory) {
+                r.ok = false;
+                r.issues.push('超级骰子状态不同步：存档=' + r.superDice.saved + ' 内存=' + r.superDice.inMemory + '（心跳会在 2 秒内自动纠正）');
+            }
+            if (r.guard.saved !== r.guard.inMemory) {
+                r.ok = false;
+                r.issues.push('守护常驻状态不同步：存档=' + r.guard.saved + ' 内存=' + r.guard.inMemory + '（心跳会在 2 秒内自动纠正）');
+            }
+            if (!r.superDice.saved && !r.guard.saved) {
+                r.issues.push('提示：超级骰子与守护常驻当前都是「关闭」状态 —— 若你以为已开启，开关状态可能没存住');
+            }
+        } catch (e) {
+            r.ok = false;
+            r.issues.push('自检本身异常：' + (e && e.message ? e.message : e));
+        }
+        return r;
+    }
+
+    // 把自检结果打成一份人话报告，直接贴给开发者就能定位问题
+    function describeDiagnosis(r) {
+        var lines = [];
+        lines.push('LSCG 装载：' + (r.lscg.present ? '是' : '否') + (r.lscg.version ? '（版本 ' + r.lscg.version + '）' : '（版本未知）'));
+        if (r.lscg.present) {
+            lines.push('模块：' + Object.keys(r.lscg.modules).map(function (k) { return k + '=' + (r.lscg.modules[k] ? 'OK' : '无'); }).join('  '));
+            lines.push('hook：');
+            Object.keys(r.lscg.hooks).forEach(function (k) {
+                var v = r.lscg.hooks[k];
+                lines.push('   ' + k + ' → ' + (v === 'PATCHED' ? '已生效' : v === 'NOT_PATCHED' ? '未安装' : '接口不存在'));
+            });
+        }
+        lines.push('超级骰子：存档=' + (r.superDice.saved ? '开' : '关') + '  内存=' + (r.superDice.inMemory ? '开' : '关') + '  模式=' + r.superDice.modeInMemory);
+        lines.push('守护常驻：存档=' + (r.guard.saved ? '开' : '关') + '  内存=' + (r.guard.inMemory ? '开' : '关'));
+        if (r.issues && r.issues.length) lines.push('问题/备注：\n - ' + r.issues.join('\n - '));
+        return lines.join('\n');
     }
 
     // ──────────────────────────────────────────
@@ -4344,6 +4478,43 @@
         const panel = ltModal("BCX 指令 · " + targetName, root);
     }
 
+    // /bc diag —— 一键自检超级骰子 / 守护常驻的接线状态。
+    // 不用逐个进游戏测功能，也不用开控制台：直接告诉你 LSCG 装没装、四个 hook 接管了几个、
+    // 内存标志和存档对不对得上。LSCG 升级改接口时会在这里立刻暴露。
+    function diagCommand() {
+        let r;
+        try { r = diagnoseSuperDice(); }
+        catch (e) { ChatRoomSendLocal("[BC自检] 自检执行失败：" + (e && e.message ? e.message : e), 30000); return; }
+
+        console.log("🐈‍⬛ [BC] 🔍 自检结果：\n" + describeDiagnosis(r));
+        if (r.issues.length) {
+            console[r.ok ? "log" : "warn"]("🐈‍⬛ [BC] " + (r.ok ? "ℹ️ 备注" : "⚠️ 问题") + "：\n - " + r.issues.join("\n - "));
+        }
+
+        const brief = [];
+        brief.push(r.lscg.present ? ("LSCG " + (r.lscg.version || "版本未知")) : "LSCG 未装载");
+        if (r.lscg.present) {
+            const hooked = [], missing = [];
+            Object.keys(r.lscg.hooks).forEach(function (k) {
+                if (r.lscg.hooks[k] === "PATCHED") hooked.push(k.split(".")[1]);
+                else if (r.lscg.hooks[k] === "MISSING") missing.push(k.split(".")[1]);
+            });
+            brief.push("已接管 " + hooked.length + "/4：" + (hooked.join("、") || "无"));
+            if (missing.length) brief.push("缺失：" + missing.join("、"));
+        }
+        brief.push("超级骰子 " + (r.superDice.inMemory ? "开" : "关") + "（存档 " + (r.superDice.saved ? "开" : "关") + "）");
+        brief.push("守护常驻 " + (r.guard.inMemory ? "开" : "关") + "（存档 " + (r.guard.saved ? "开" : "关") + "）");
+
+        // 聊天输出单独容错：即使不在聊天室导致发送失败，控制台那份结果也已经打出来了
+        try {
+            ChatRoomSendLocal("[BC自检] " + brief.join(" | "), 30000);
+            r.issues.forEach(function (s) { ChatRoomSendLocal("[BC自检] " + (r.ok ? "· " : "⚠️ ") + s, 30000); });
+            if (r.ok && !r.issues.length) ChatRoomSendLocal("[BC自检] ✅ 一切正常", 30000);
+        } catch (e) {
+            console.warn("🐈‍⬛ [BC] ⚠️ 自检结果已输出到控制台，但聊天窗口发送失败（可能不在房间内）:", e && e.message ? e.message : e);
+        }
+    }
+
     function handleBcCommand(text) {
         if (!Player.BCToolbox) initializeStorage();
         const args       = text.trim().split(/\s+/);
@@ -4355,6 +4526,7 @@
         const commands = {
             freetotal,
             free,
+            diag:          diagCommand,
             bcximport:     bcxImport,
             rpmode,
             rpbtn,
@@ -4789,6 +4961,28 @@
         installWarmCanvasButton();
         setupHooks();
 
+        // 玩家已登录、ExtensionSettings 已就位 → 这是开关状态的权威同步点。
+        // 文件底部那次同步跑在登录之前，读到的只是默认值；这里补一次才能拿到真实存档。
+        try { syncToggleStates(); } catch (e) {}
+
+        // 启动自检：LSCG 没装、或升级后接口改名时，直接在聊天与控制台给出明确提示，
+        // 免去逐个进游戏测功能的麻烦。仅在「开关是开的但接线有问题」时才打扰用户。
+        setTimeout(function () {
+            try {
+                var dg = diagnoseSuperDice();
+                var summary = describeDiagnosis(dg);
+                console.log("🐈‍⬛ [BC] 🔍 超级骰子自检：\n" + summary);
+                if (!dg.ok) {
+                    console.warn("🐈‍⬛ [BC] ⚠️ 自检发现问题：\n - " + dg.issues.join("\n - "));
+                    var fatal = dg.issues.filter(function (s) { return s.indexOf('未装载') >= 0 || s.indexOf('接口缺失') >= 0; });
+                    // 只在「用户确实开了开关、但接线断了」时才打扰，且必须已在聊天室内
+                    if (fatal.length && typeof CurrentScreen !== 'undefined' && CurrentScreen === "ChatRoom" && (getSuperDice() || getGuard())) {
+                        ChatRoomSendLocal("[BC工具箱] 超级骰子/守护常驻接线异常：" + fatal[0], 30000);
+                    }
+                }
+            } catch (e) {}
+        }, 6000);
+
         const registerCommand = () => {
             CommandCombine([{ Tag: "bc", Description: "Execute BC工具箱 command", Action: handleBcCommand }]);
             console.log("🐈‍⬛ [BC] ✅ /bc 指令注册成功");
@@ -4827,9 +5021,16 @@
     .catch(error => { console.error("🐈‍⬛ [BC] ❌ 初始化失敗:", error); });
 
     // 超级骰子 + 守护常驻：启动同步 + 心跳重装补丁（兼容 LSCG 重载）
-    try { _superDice.enabled = getSuperDice(); _superDice.mode = getSuperDiceMode(); } catch (e) {}
-    try { _guard.enabled = getGuard(); } catch (e) {}
-    setInterval(function () { try { ensureMakeActivityCheckPatched(); ensureSuperDicePatched(); ensureGuardPatched(); } catch (e) {} }, 2000);
+    // 这里先同步一次，让 LSCG 早于登录就绪时也能用；真正的权威同步在 initialize() 登录之后。
+    syncToggleStates();
+    setInterval(function () {
+        try {
+            syncToggleStates();   // 持续对齐存档，启动时序造成的丢失会在 2 秒内自动纠正
+            ensureMakeActivityCheckPatched();
+            ensureSuperDicePatched();
+            ensureGuardPatched();
+        } catch (e) {}
+    }, 2000);
 
     // ── 调试 / 自动化接口（CDP 热注入验证用，普通用户无感） ──
     try {
@@ -4839,6 +5040,14 @@
             getGuard: getGuard, setGuard: setGuard,
             ensureSuperDicePatched: ensureSuperDicePatched, ensureGuardPatched: ensureGuardPatched,
             ensureMakeActivityCheckPatched: ensureMakeActivityCheckPatched,
+            syncToggleStates: syncToggleStates,
+            diagnose: function () {
+                var r = diagnoseSuperDice();
+                console.log("🐈‍⬛ [BC] 🔍 自检结果：\n" + describeDiagnosis(r));
+                if (!r.ok) console.warn("🐈‍⬛ [BC] ⚠️ 问题：\n - " + r.issues.join("\n - "));
+                else console.log("🐈‍⬛ [BC] ✅ 超级骰子接线正常");
+                return r;
+            },
             showPanel: showToolPanel, hidePanel: hideToolPanel,
             _superDice: _superDice, _guard: _guard
         };
