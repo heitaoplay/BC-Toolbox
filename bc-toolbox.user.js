@@ -2,7 +2,7 @@
 // @name         BC工具箱
 // @name:zh      BC工具箱
 // @namespace    https://github.com/heitaoplay/BC-Toolbox
-// @version      3.4.2
+// @version      3.4.3
 // @description  BC 多功能工具箱 - BC工具箱 (R121 Compatible) + UI 面板 + 角色选择器 + Canvas SVG 图标 + 拖拽排序 + 主题自定义 + 自动解绑女仆
 // @author       heitaoplay
 // @include      /^https:\/\/(www\.)?bondage(projects\.elementfx|-(europe|asia))\.com\/.*/
@@ -30,7 +30,7 @@
     }
     window.__BCToolboxLoaded__ = true;
     let modApi = null;
-    const modversion = "3.4.2";
+    const modversion = "3.4.3";
 
     const rpBtnX    = 955;
     const rpBtnY    = 855;
@@ -3489,20 +3489,47 @@
         return true;
     }
 
+    // 解析「目标 + 锁名」参数：目标昵称可能含空格（如「𝐓𝐀𝐎 𝑀𝒰𝒮𝔼」），
+    // 锁名显示文字也可能含空格（如 Best Friend Timer Padlock），
+    // 所以从参数尾部往前匹配已知锁名，命中部分当锁名，剩余部分整体当目标。
+    function parseLockArgs(args, validLocks) {
+        const tokens = (args || "").trim().split(/\s+/).filter(Boolean);
+        let lock = null, lockName = "", targetIdentifier = tokens.join(" ");
+        for (let n = 1; n <= tokens.length; n++) {
+            const candidate = tokens.slice(-n).join(" ");
+            const hit = validLocks.find(l =>
+                l.Name.toLowerCase() === candidate.toLowerCase() ||
+                l.Description.toLowerCase() === candidate.toLowerCase()
+            );
+            if (hit) {
+                lock = hit;
+                lockName = candidate;
+                targetIdentifier = tokens.slice(0, -n).join(" ");
+                break;
+            }
+        }
+        // 没匹配到已知锁名时退化为「最后一个 token 是锁名」，让报错显示用户实际输入的内容
+        if (!lock && tokens.length > 1) {
+            lockName = tokens[tokens.length - 1];
+            targetIdentifier = tokens.slice(0, -1).join(" ");
+        }
+        return { lock: lock, lockName: lockName, targetIdentifier: targetIdentifier };
+    }
+
     function fullLock(args) {
-        const params           = args.trim().split(/\s+/);
-        const targetIdentifier = params[0] || "";
-        const lockName         = params[1] || "";
+        const itemMiscGroup = AssetGroupGet(Player.AssetFamily, "ItemMisc");
+        if (!itemMiscGroup) return true;
+        const validLocks = itemMiscGroup.Asset.filter(a => a.IsLock).map(a => ({ Name: a.Name, Description: a.Description || a.Name }));
+        const parsed = parseLockArgs(args, validLocks);
+        const targetIdentifier = parsed.targetIdentifier;
+        const lockName         = parsed.lockName;
+        const lock             = parsed.lock;
         const target           = getPlayer(targetIdentifier);
         if (target === Player && !targetIdentifier) { ChatRoomSendLocal(t('lockSpecify')); if (!ltToastSuppressed) ltToast(t('lockSpecify'), 'info'); return true; }
         if (!ChatRoomCharacter?.find(c => c.MemberNumber === target.MemberNumber)) {
             ChatRoomSendLocal(getNickname(target) + " " + t('notInRoom') + "！"); if (!ltToastSuppressed) ltToast(getNickname(target) + " " + (isZh() ? "不在房间" : "not in room"), 'error'); return true;
         }
         if (!hasBCItemPermission(target)) { ChatRoomSendLocal(t('noPermission') + " " + getNickname(target) + "。"); if (!ltToastSuppressed) ltToast((isZh() ? "无权限: " : "No permission: ") + getNickname(target), 'error'); return true; }
-        const itemMiscGroup = AssetGroupGet(Player.AssetFamily, "ItemMisc");
-        if (!itemMiscGroup) return true;
-        const validLocks = itemMiscGroup.Asset.filter(a => a.IsLock).map(a => ({ Name: a.Name, Description: a.Description || a.Name }));
-        const lock = validLocks.find(l => l.Name.toLowerCase() === lockName.toLowerCase() || l.Description.toLowerCase() === lockName.toLowerCase());
         if (!lock) {
             ChatRoomSendLocal(t('lockInvalid') + "：" + lockName + "。" + t('lockAvailable') + "：" + validLocks.map(l => l.Description).join("、"));
             if (!ltToastSuppressed) ltToast((isZh() ? "无效锁类型: " : "Invalid lock: ") + lockName, 'error');
