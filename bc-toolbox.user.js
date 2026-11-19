@@ -2,7 +2,7 @@
 // @name         BC工具箱
 // @name:zh      BC工具箱
 // @namespace    https://github.com/heitaoplay/BC-Toolbox
-// @version      3.4.7
+// @version      3.4.8
 // @description  BC 多功能工具箱 - BC工具箱 (R121 Compatible) + UI 面板 + 角色选择器 + Canvas SVG 图标 + 拖拽排序 + 主题自定义 + 自动解绑女仆
 // @author       heitaoplay
 // @include      /^https:\/\/(www\.)?bondage(projects\.elementfx|-(europe|asia))\.com\/.*/
@@ -30,7 +30,7 @@
     }
     window.__BCToolboxLoaded__ = true;
     let modApi = null;
-    const modversion = "3.4.7";
+    const modversion = "3.4.8";
 
     const rpBtnX    = 955;
     const rpBtnY    = 855;
@@ -150,6 +150,7 @@
         craftEdit:  '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 13.42 20.59a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><circle cx="7" cy="7" r="1.4"/></svg>',
         craftClear: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M20.59 13.41 13.42 20.59a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z"/><path d="M4 4l16 16"/></svg>',
         bcxcmd:    '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="16" rx="2"/><path d="M7 9l3 3 3-3"/><path d="M7 14h6"/><path d="M15 14v4"/></svg>',
+        plugins:   '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><circle cx="9" cy="8" r="3"/><path d="M3 20v-1a5 5 0 0 1 5-5h2a5 5 0 0 1 5 5v1"/><circle cx="17.5" cy="9" r="2.3"/><path d="M16 14.3a4 4 0 0 1 5 3.8V20"/></svg>',
     };
 
     // ════════════════════════════════════════════════════════════════════════
@@ -1983,6 +1984,7 @@
         { id: 'password',  icon: SVG.password,  label: '锁密码',  title: '查看当前锁的密码', category: 'restraint', fn: function() { execChatCommand('/infolock'); } },
         { id: 'struggle',  icon: SVG.struggle,  label: '挣扎',    title: 'LSCG 挣脱指令', category: 'magic', fn: function() { execChatCommand('/lscg escape'); ltToast(isZh() ? '已发送挣扎指令' : 'Struggle command sent', 'info'); } },
         { id: 'wake',      icon: SVG.wake,      label: '唤醒',    title: 'LSCG 唤醒：睡眠 / 催眠', category: 'magic', fn: function() { openWakeMenu(); } },
+        { id: 'plugins',   icon: SVG.plugins,   label: '查插件',  title: isZh() ? '查询房间内玩家安装的插件（官方 /mods remote 快捷方式）' : 'Query mods installed by players in room (native /mods remote shortcut)', category: 'magic', fn: function() { remoteModsCommand(''); } },
         { id: 'enhance',   icon: SVG.enhance,   label: '增强',    title: '获取道具/金钱/技能', category: 'boost', fn: function() { getEverything(); } },
         { id: 'bcxcmd',    icon: SVG.bcxcmd,    label: 'BCX指令', title: '触发 BCX 指令（表情/姿态/场所/文本等）', category: 'craft', fn: async function() {
             await openBcxCommandPanel();
