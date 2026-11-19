@@ -2,7 +2,7 @@
 // @name         BC工具箱
 // @name:zh      BC工具箱
 // @namespace    https://github.com/heitaoplay/BC-Toolbox
-// @version      3.4.3
+// @version      3.4.4
 // @description  BC 多功能工具箱 - BC工具箱 (R121 Compatible) + UI 面板 + 角色选择器 + Canvas SVG 图标 + 拖拽排序 + 主题自定义 + 自动解绑女仆
 // @author       heitaoplay
 // @include      /^https:\/\/(www\.)?bondage(projects\.elementfx|-(europe|asia))\.com\/.*/
@@ -30,7 +30,7 @@
     }
     window.__BCToolboxLoaded__ = true;
     let modApi = null;
-    const modversion = "3.4.3";
+    const modversion = "3.4.4";
 
     const rpBtnX    = 955;
     const rpBtnY    = 855;
@@ -403,6 +403,7 @@
             undoCountUnit:   "条记录",
             undoApplyDone:   "外观已回滚",
             undoApplySize:   "变更大小",
+            undoSendFail:    "回滚失败，请查看控制台报错",
 
             freeNoItem:      "没有束缚物品",
             freeDone:        "解除束缚",
@@ -532,6 +533,7 @@
             undoCountUnit:   "records",
             undoApplyDone:   "Appearance rolled back",
             undoApplySize:   "Change size",
+            undoSendFail:    "Rollback failed, see console for details",
 
             freeNoItem:      "has no restrained items",
             freeDone:        "removed restraints",
@@ -2901,6 +2903,13 @@
     const UNDO_MAX_PER_CHARACTER = 20;
     const undoHistory = {};
 
+    // 按 MemberNumber 重新取房内最新角色对象；自己直接返回 Player
+    function resolveUndoTarget(target) {
+        if (!target?.MemberNumber) return null;
+        if (target.MemberNumber === Player.MemberNumber) return Player;
+        return ChatRoomCharacter?.find(c => c.MemberNumber === target.MemberNumber) || null;
+    }
+
     function saveUndoSnapshot(target, changedByNumber) {
         const id = target?.MemberNumber;
         if (!id) return;
@@ -2996,7 +3005,7 @@
         const undoObs = new MutationObserver(() => {
             if (!document.body.contains(panel)) {
                 clearInterval(renderInterval);
-                try { if (canvasCharacter) CharacterDelete(canvasCharacter.ID); } catch (e) {}
+                try { if (canvasCharacter) CharacterDelete(canvasCharacter); } catch (e) {}
                 undoObs.disconnect();
             }
         });
@@ -3018,17 +3027,37 @@
         nextBtn.onclick = () => { if (currentIndex < history.length - 1) { currentIndex++; updateMeta(); renderPreview(); } };
 
         applyBtn.onclick = () => {
-            if (!hasBCItemPermission(target)) { ChatRoomSendLocal(t('noPermission') + " " + getNickname(target) + "。"); return; }
+            // 以点击当下的房间角色为准（预览期间对方可能已重新进房或被重建）
+            const live = resolveUndoTarget(target);
+            if (!live) { ChatRoomSendLocal(getNickname(target) + " " + t('notInRoom') + "！"); return; }
+            if (!hasBCItemPermission(live)) { ChatRoomSendLocal(t('noPermission') + " " + getNickname(live) + "。"); return; }
             const entry = history[currentIndex];
-            const oldBundle = ServerAppearanceBundle(target.Appearance);
-            ServerSend("ChatRoomCharacterUpdate", {
-                ID: target.ID === 0 ? target.OnlineID : target.AccountName.replace("Online-", ""),
-                ActivePose: target.ActivePose,
-                Appearance: entry.bundle
-            });
+            const oldBundle = ServerAppearanceBundle(live.Appearance);
+            try {
+                // 先本地套用（经 BC 规则校验），画面立即生效，再推送校验后的结果。
+                // R134 已移除 OnlineID，角色识别必须用 CharacterID，旧写法会送 undefined 被服务器忽略。
+                ServerAppearanceLoadFromBundle(live, live.AssetFamily, structuredClone(entry.bundle), Player.MemberNumber);
+                CharacterRefresh(live, false, false);
+                const appliedBundle = ServerAppearanceBundle(live.Appearance);
+                ServerSend("ChatRoomCharacterUpdate", {
+                    ID: live.CharacterID,
+                    ActivePose: live.ActivePose,
+                    Appearance: appliedBundle
+                });
+                if (ChatRoomData?.Character) {
+                    const idx = ChatRoomData.Character.findIndex(c => c.MemberNumber === live.MemberNumber);
+                    if (idx !== -1) ChatRoomData.Character[idx].Appearance = appliedBundle;
+                }
+            } catch (e) {
+                console.error("🐈‍⬛ [BC] ❌ 回滚套用失败:", e.message);
+                ChatRoomSendLocal(t('undoSendFail'));
+                return;
+            }
             const sizeKb = (Math.abs(JSON.stringify(oldBundle).length - JSON.stringify(entry.bundle).length) / 1024).toFixed(1);
-            ChatRoomSendLocal(getNickname(target) + " " + t('undoApplyDone') + "（" + t('undoApplySize') + ": " + sizeKb + "kB）");
-            chatSendCustomAction(getNickname(Player) + " 将 " + getNickname(target) + " 的外观回滚到 " + new Date(entry.timestamp).toLocaleTimeString() + " 的状态！");
+            ChatRoomSendLocal(getNickname(live) + " " + t('undoApplyDone') + "（" + t('undoApplySize') + ": " + sizeKb + "kB）");
+            chatSendCustomAction(getNickname(Player) + " 将 " + getNickname(live) + " 的外观回滚到 " + new Date(entry.timestamp).toLocaleTimeString() + " 的状态！");
+            // 回滚本身也存成快照，之后可再回滚回来；历史其余部分保持不动
+            saveUndoSnapshot(live, Player.MemberNumber);
             undoHistory[id].splice(currentIndex + 1);
             panel.remove();
         };
