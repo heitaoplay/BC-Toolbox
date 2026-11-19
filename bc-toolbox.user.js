@@ -2,7 +2,7 @@
 // @name         BC工具箱
 // @name:zh      BC工具箱
 // @namespace    https://github.com/heitaoplay/BC-Toolbox
-// @version      3.4.5
+// @version      3.4.6
 // @description  BC 多功能工具箱 - BC工具箱 (R121 Compatible) + UI 面板 + 角色选择器 + Canvas SVG 图标 + 拖拽排序 + 主题自定义 + 自动解绑女仆
 // @author       heitaoplay
 // @include      /^https:\/\/(www\.)?bondage(projects\.elementfx|-(europe|asia))\.com\/.*/
@@ -30,7 +30,7 @@
     }
     window.__BCToolboxLoaded__ = true;
     let modApi = null;
-    const modversion = "3.4.5";
+    const modversion = "3.4.6";
 
     const rpBtnX    = 955;
     const rpBtnY    = 855;
@@ -509,8 +509,13 @@
                 "/bc clearcraft [目标] - 清除束缚的所有订制属性\n" +
                 "/bc wardrobe          - 开启衣柜\n" +
                 "/bc theme             - 打开主题设置\n" +
+                "/bc mods [目标]        - 查询房间内玩家的 Mod SDK 插件列表（不填=全体）\n" +
                 "/bc diag              - 自检超级骰子/守护常驻接线状态（排查失效用）",
 
+            rmodsTitle:      "房间插件查询结果",
+            rmodsNotInRoom:  "需要先进入聊天室才能查询插件",
+            rmodsBadTarget:  "房间内找不到该玩家（可用昵称或编号）",
+            rmodsWaiting:    "正在查询房间内玩家，请稍候…",
             loaded: "BC工具箱 v{v} 载入！使用 /bc help 查看说明",
         },
         en: {
@@ -639,8 +644,13 @@
                 "/bc clearcraft [target]-Clear all craft on restraints\n" +
                 "/bc wardrobe          - Open wardrobe\n" +
                 "/bc theme             - Open theme settings\n" +
+                "/bc mods [target]      - Query Mod SDK mods of players in room (blank = everyone)\n" +
                 "/bc diag              - Self-check Super Dice / Guard wiring (troubleshooting)",
 
+            rmodsTitle:      "Remote mod scan results",
+            rmodsNotInRoom:  "You must be in a chat room to scan mods",
+            rmodsBadTarget:  "No matching player in this room (use nickname or member number)",
+            rmodsWaiting:    "Querying players in the room, please wait…",
             loaded: "BC工具箱 v{v} loaded! Use /bc help for help",
         }
     };
@@ -3144,6 +3154,22 @@
     // ──────────────────────────────────────────
     function setupHooks() {
 
+        // 远程插件查询：绑定隐藏消息监听（独立于 Release Maid，不受其开关影响）
+        let rmodsHookBound = false;
+        safeHookFunction("ChatRoomLoad", 1, (args, next) => {
+            const result = next(args);
+            if (!rmodsHookBound) {
+                rmodsHookBound = true;
+                try {
+                    if (ServerSocket && typeof ServerSocket.on === 'function') {
+                        ServerSocket.on("ChatRoomMessage", remoteModsOnMessage);
+                        console.log("🐈‍⬛ [BC] ✅ 远程插件查询监听已绑定");
+                    }
+                } catch (e) { console.error("🐈‍⬛ [BC] ❌ 远程插件查询监听绑定失败:", e.message); }
+            }
+            return result;
+        });
+
         // Release Maid: 绑定消息监听
         let rmHookBound = false;
         safeHookFunction("ChatRoomLoad", 0, (args, next) => {
@@ -4651,6 +4677,195 @@
         }
     }
 
+    // ──────────────────────────────────────────
+    // 远程插件查询（对齐 BC 官方 /mods remote 协议）
+    // 查询房间内其他人通过 Mod SDK 加载的 mod（含本工具箱自身）
+    // 协议：Type:"Hidden"，Content:"ModSdkModsQuery"/"ModSdkModsReply"
+    // ──────────────────────────────────────────
+    const REMOTE_MODS_TIMEOUT_MS = 5000;
+    let remoteModsActive = null; // { requestId, pending:Set, results:Map, rootEl, total, finalized, timeoutId }
+
+    function remoteModsGetLocal() {
+        try {
+            if (typeof bcModSdk === 'undefined' || !bcModSdk.getModsInfo) return [];
+            return bcModSdk.getModsInfo().slice().sort((a, b) => (a.name || '').localeCompare(b.name || ''));
+        } catch (e) { return []; }
+    }
+
+    // 别人发来查询 / 我们收到回复——由独立的消息监听器调用
+    function remoteModsOnMessage(data) {
+        try {
+            if (!data || data.Type !== "Hidden" || typeof data.Content !== "string") return;
+            const dict = Array.isArray(data.Dictionary) ? data.Dictionary : [];
+
+            if (data.Content === "ModSdkModsQuery") {
+                const payload = dict.find(d => d && d.Tag === "ModSdkModsQueryPayload" && typeof d.RequestId === "string");
+                if (!payload || data.Sender === Player.MemberNumber) return;
+                // 避免双重回复：BC 新版本原生自带 /mods remote，它也监听这条隐藏消息并会自动回复。
+                // 若原生处理器存在，交给它处理，我们只负责自己发起的查询的回复接收。
+                try {
+                    if (typeof CommandsModsList !== 'undefined' && CommandsModsList && typeof CommandsModsList.ProcessHiddenRemote === 'function') return;
+                } catch (e) {}
+                // 尊重对方的 Online 偏好设置（默认 true；只有明确 false 才拒绝）
+                let declined = false;
+                try { declined = Player.OnlineSettings && Player.OnlineSettings.RespondRemoteModListQueries === false; } catch (e) {}
+                ServerSend("ChatRoomChat", {
+                    Content: "ModSdkModsReply",
+                    Type: "Hidden",
+                    Target: data.Sender,
+                    Dictionary: [{
+                        Tag: "ModSdkModsReplyPayload",
+                        RequestId: payload.RequestId,
+                        Status: declined ? "declined" : "ok",
+                        ModsJson: declined ? undefined : JSON.stringify(remoteModsGetLocal())
+                    }]
+                });
+            } else if (data.Content === "ModSdkModsReply") {
+                const payload = dict.find(d => d && d.Tag === "ModSdkModsReplyPayload" && typeof d.RequestId === "string");
+                const active = remoteModsActive;
+                if (!payload || !active || active.finalized || payload.RequestId !== active.requestId) return;
+                const senderNum = data.Sender;
+                if (!active.pending.has(senderNum)) return;
+                active.pending.delete(senderNum);
+                if (payload.Status === "declined" || payload.Status === "error") {
+                    active.results.set(senderNum, { status: payload.Status });
+                } else {
+                    try {
+                        const mods = payload.ModsJson ? JSON.parse(payload.ModsJson) : [];
+                        active.results.set(senderNum, Array.isArray(mods) ? { status: "ok", mods } : { status: "error" });
+                    } catch (e) { active.results.set(senderNum, { status: "error" }); }
+                }
+                remoteModsUpdateProgress();
+                if (active.pending.size === 0) remoteModsFinalize();
+            }
+        } catch (e) { console.error("🐈‍⬛ [BC] ❌ 远程插件查询消息处理错误:", e); }
+    }
+
+    function remoteModsEscape(s) {
+        return String(s == null ? '' : s).replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    }
+
+    function remoteModsBuildListHtml(mods) {
+        if (!mods || !mods.length) return '<div style="font-size:11px;opacity:.7;padding:4px 0;">(无 Mod SDK 插件)</div>';
+        return '<ul style="list-style:none;margin:4px 0 0;padding:0;font-size:12px;">' + mods.map(m => {
+            const name = remoteModsEscape(m.name || '?');
+            const ver = 'v' + remoteModsEscape(m.version || '?');
+            const repo = m.repository ? '<a href="' + remoteModsEscape(m.repository) + '" target="_blank" rel="noopener" style="margin-left:auto;font-size:11px;">仓库</a>' : '';
+            return '<li style="display:flex;align-items:center;gap:6px;padding:3px 0;border-bottom:1px solid rgba(128,128,128,.15);">' +
+                '<b>' + name + '</b><span style="opacity:.6;font-size:11px;">' + ver + '</span>' + repo + '</li>';
+        }).join('') + '</ul>';
+    }
+
+    function remoteModsFinalize() {
+        const active = remoteModsActive;
+        if (!active || active.finalized) return;
+        active.finalized = true;
+        clearTimeout(active.timeoutId);
+        // 超时仍未回复的标为 timeout
+        for (const num of active.pending) active.results.set(num, { status: "timeout" });
+        active.pending.clear();
+
+        const roomOrder = new Map(ChatRoomCharacter.map((c, i) => [c.MemberNumber, i]));
+        const rows = [...active.results.entries()].map(([num, r]) => ({ num, r, c: ChatRoomCharacter.find(ch => ch.MemberNumber === num) }));
+        rows.sort((a, b) => {
+            const oa = roomOrder.get(a.num), ob = roomOrder.get(b.num);
+            if (oa != null && ob != null) return oa - ob;
+            if (oa != null) return -1;
+            if (ob != null) return 1;
+            return a.num - b.num;
+        });
+
+        const statusLabel = { ok: '已回复', declined: '拒绝提供', error: '读取失败', timeout: '无响应' };
+        const body = rows.map(row => {
+            const isSelf = row.num === Player.MemberNumber;
+            const name = row.c ? remoteModsEscape(getNickname(row.c)) : ('成员 ' + row.num);
+            const ver = row.c && row.c.OnlineSharedSettings ? (row.c.OnlineSharedSettings.GameVersion || 'R?') : 'R?';
+            const st = isSelf ? '你自己' : (statusLabel[row.r.status] || row.r.status);
+            const content = row.r.status === 'ok'
+                ? remoteModsBuildListHtml(row.r.mods)
+                : '<div style="font-size:11px;opacity:.7;padding:4px 0;">' + (row.r.status === 'declined' ? '该玩家在在线偏好中关闭了插件列表查询' : row.r.status === 'timeout' ? '等待超时（对方可能离线/隐身/网络延迟）' : '无法读取该玩家的插件列表') + '</div>';
+            return '<details style="border-top:1px solid rgba(128,128,128,.2);padding:5px 0;"' + (rows.length === 1 ? ' open' : '') + '>' +
+                '<summary style="cursor:pointer;font-size:12px;">' + name + ' <span style="opacity:.6;">(' + row.num + ')</span> ' +
+                '<span style="opacity:.55;font-size:11px;">' + remoteModsEscape(ver) + '</span> ' +
+                '<span style="opacity:.7;font-size:11px;">[' + st + ']</span></summary>' + content + '</details>';
+        }).join('');
+
+        if (active.rootEl && active.rootEl.isConnected) {
+            const bodyEl = active.rootEl.querySelector('.bct-rmods-body');
+            if (bodyEl) bodyEl.innerHTML = body;
+        }
+        remoteModsActive = null;
+    }
+
+    function remoteModsUpdateProgress() {
+        const active = remoteModsActive;
+        if (!active || active.finalized) return;
+        const el = active.rootEl && active.rootEl.querySelector('.bct-rmods-progress');
+        if (el) el.textContent = '已收到 ' + (active.total - active.pending.size) + ' / ' + active.total;
+    }
+
+    function remoteModsCommand(args) {
+        try {
+            if (typeof ServerPlayerIsInChatRoom === 'function' && !ServerPlayerIsInChatRoom()) {
+                ChatRoomSendLocal(t('rmodsNotInRoom')); return true;
+            }
+            const spec = (args || '').trim().replace(/^@/, '');
+            let target = null;
+            if (spec) {
+                const candidates = ChatRoomCharacter.filter(c =>
+                    c.MemberNumber === Number(spec) ||
+                    (c.Name && c.Name.toLowerCase() === spec.toLowerCase()) ||
+                    (c.Nickname && c.Nickname.toLowerCase() === spec.toLowerCase()));
+                target = candidates[0] || null;
+                if (!target) { ChatRoomSendLocal(t('rmodsBadTarget')); return true; }
+            }
+
+            if (remoteModsActive) {
+                clearTimeout(remoteModsActive.timeoutId);
+                if (remoteModsActive.rootEl && remoteModsActive.rootEl.remove) remoteModsActive.rootEl.remove();
+                remoteModsActive = null;
+            }
+
+            const requestId = (typeof CommonGenerateUniqueID === 'function' ? CommonGenerateUniqueID() : String(Date.now()) + Math.random().toString(36).slice(2));
+            const targets = target ? [target] : ChatRoomCharacter;
+            const pending = new Set(targets.filter(c => c.MemberNumber !== Player.MemberNumber).map(c => c.MemberNumber));
+            const results = new Map();
+            if (targets.some(c => c.MemberNumber === Player.MemberNumber)) {
+                results.set(Player.MemberNumber, { status: "ok", mods: remoteModsGetLocal() });
+            }
+
+            // 建结果面板（追加到聊天区，风格自洽；不依赖 BC 新版 CSS 类）
+            const root = document.createElement('div');
+            root.className = 'ChatMessage';
+            root.style.cssText = 'background:rgba(214,150,255,.18);border-radius:8px;padding:8px 10px;margin:6px 0;font:inherit;white-space:normal;';
+            root.innerHTML = '<div style="display:flex;align-items:center;gap:8px;">' +
+                '<b style="font-size:13px;">🔌 ' + remoteModsEscape(t('rmodsTitle')) + '</b>' +
+                '<span class="bct-rmods-progress" style="margin-left:auto;font-size:11px;opacity:.7;">0 / ' + pending.size + '</span></div>' +
+                '<div class="bct-rmods-body">' +
+                (pending.size ? '<div style="font-size:11px;opacity:.7;padding:6px 0;">' + remoteModsEscape(t('rmodsWaiting')) + '</div>' : '') +
+                '</div>';
+            root.setAttribute('data-sender', Player.MemberNumber);
+            root.setAttribute('data-time', typeof ChatRoomCurrentTime === 'function' ? ChatRoomCurrentTime() : '');
+            try { ChatRoomAppendChat(root); } catch (e) { ChatRoomSendLocal(t('rmodsTitle') + '：面板显示失败，详见本地'); }
+
+            const active = { requestId, pending, results, rootEl: root, total: pending.size, finalized: false, timeoutId: null };
+            remoteModsActive = active;
+            active.timeoutId = setTimeout(() => remoteModsFinalize(), REMOTE_MODS_TIMEOUT_MS);
+
+            ServerSend("ChatRoomChat", {
+                Content: "ModSdkModsQuery",
+                Type: "Hidden",
+                Dictionary: [{ Tag: "ModSdkModsQueryPayload", RequestId: requestId }],
+                Target: target ? target.MemberNumber : undefined
+            });
+            try { ElementScrollToEnd("TextAreaChatLog"); } catch (e) {}
+        } catch (e) {
+            console.error("🐈‍⬛ [BC] ❌ 远程插件查询命令错误:", e);
+            ChatRoomSendLocal(t('cmdFail') + '：/bc mods');
+        }
+        return true;
+    }
+
     function handleBcCommand(text) {
         if (!Player.BCToolbox) initializeStorage();
         const args       = text.trim().split(/\s+/);
@@ -4663,6 +4878,7 @@
             freetotal,
             free,
             diag:          diagCommand,
+            mods:          remoteModsCommand,
             bcximport:     bcxImport,
             rpmode,
             rpbtn,
