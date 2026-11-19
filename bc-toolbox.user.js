@@ -2,7 +2,7 @@
 // @name         BC工具箱
 // @name:zh      BC工具箱
 // @namespace    https://github.com/heitaoplay/BC-Toolbox
-// @version      3.4.4
+// @version      3.4.5
 // @description  BC 多功能工具箱 - BC工具箱 (R121 Compatible) + UI 面板 + 角色选择器 + Canvas SVG 图标 + 拖拽排序 + 主题自定义 + 自动解绑女仆
 // @author       heitaoplay
 // @include      /^https:\/\/(www\.)?bondage(projects\.elementfx|-(europe|asia))\.com\/.*/
@@ -30,7 +30,7 @@
     }
     window.__BCToolboxLoaded__ = true;
     let modApi = null;
-    const modversion = "3.4.4";
+    const modversion = "3.4.5";
 
     const rpBtnX    = 955;
     const rpBtnY    = 855;
@@ -1243,13 +1243,35 @@
         if (typeof window.__LT_updateToggles === 'function') window.__LT_updateToggles();
     }
 
-    function addAntiRestraintWhitelist(group)   { const w = getAntiRestraintWhitelist(); if (!w.includes(group)) { w.push(group); getES().antiRestraintWhitelist = w; saveES(); } }
-    function removeAntiRestraintWhitelist(group) { getES().antiRestraintWhitelist = getAntiRestraintWhitelist().filter(g => g !== group); saveES(); }
+    function addAntiRestraintWhitelist(key)    { const w = getAntiRestraintWhitelist(); if (!w.includes(key)) { w.push(key); getES().antiRestraintWhitelist = w; saveES(); } }
+    function removeAntiRestraintWhitelist(key) { getES().antiRestraintWhitelist = getAntiRestraintWhitelist().filter(g => g !== key); saveES(); }
+
+    // 白名单键：道具名，或「道具名|定制名」，这样同一槽位的不同定制道具能分开管。
+    function ltGetItemKey(item) {
+        try {
+            const craft = (item.Craft && typeof item.Craft.Name === 'string') ? item.Craft.Name.trim() : '';
+            return craft ? item.Asset.Name + '|' + craft : item.Asset.Name;
+        } catch (e) { return (item && item.Asset && item.Asset.Name) || ''; }
+    }
+    function ltGetItemDisplayName(item) {
+        try {
+            const craft = (item.Craft && typeof item.Craft.Name === 'string') ? item.Craft.Name.trim() : '';
+            const base = (item.Asset && item.Asset.Description) || item.Asset.Name;
+            return craft ? craft + ' (' + base + ')' : base;
+        } catch (e) { return 'restraint'; }
+    }
+    // 兼容旧版白名单（旧代码存的是槽位组名，如 ItemCollar）
+    function ltIsWhitelisted(item) {
+        const wl = getAntiRestraintWhitelist();
+        return wl.includes(ltGetItemKey(item)) || wl.includes(item.Asset.Group.Name);
+    }
 
     let ltKnownRestraints = new Set();
     let ltLastRestrainer = null;
     const LT_ESCAPE_SYNC_MS = 2000;
     let ltLastEscapeSync = 0;
+    let ltEscaping = false;                 // 重入锁：防止连续施加时重复弹窗/重复解除
+    let ltFailAttempts = new Map();         // 每组脱除失败次数，达到 2 次后不再重试（可能被锁住）
 
     function ltSnapshotRestraints() {
         try {
@@ -1258,6 +1280,16 @@
                     .filter(i => LT_RESTRAINT_GROUPS.has(i.Asset.Group.Name))
                     .map(i => i.Asset.Group.Name)
             );
+            ltFailAttempts.clear();
+        } catch (e) { /* ignore */ }
+    }
+
+    // 把当前仍穿着、且没有待重试记录的槽位并回「已知」，避免脱掉后又被当成新拘束
+    function ltMergeCurrentRestraints() {
+        try {
+            Player.Appearance
+                .filter(i => LT_RESTRAINT_GROUPS.has(i.Asset.Group.Name) && !ltFailAttempts.has(i.Asset.Group.Name))
+                .forEach(i => ltKnownRestraints.add(i.Asset.Group.Name));
         } catch (e) { /* ignore */ }
     }
 
@@ -1274,12 +1306,14 @@
     function ltAntiRestraintEmote(text) {
         if (CurrentScreen !== "ChatRoom" || !text || !text.trim()) return;
         try {
-            // BC Action 消息：Content 即动作文本，客户端会自动在前面加上发送者名字。
-            // 不要再手动拼接 Player.Name，否则会出现「名字 名字 动作」的重复。
+            // 照搬 EmeryBC 官方格式：Content 拼上发送者名字，Dictionary 带一个哨兵项
+            //（Tag 是 Interface.csv 里不存在的文本，Text 为零宽字符 U+200C），
+            // BC 才会把这条当「自定义角色动作」渲染。缺了它聊天窗口会显示异常。
             ServerSend("ChatRoomChat", {
                 Type: "Action",
-                Content: text.trim(),
+                Content: Player.Name + " " + text.trim(),
                 Dictionary: [
+                    { Tag: 'MISSING TEXT IN "Interface.csv": ', Text: "\u200C" },
                     { SourceCharacter: Player.MemberNumber },
                 ],
             });
@@ -1292,31 +1326,60 @@
     }
 
     function ltDoEscape(newItems, restrainer, itemName) {
+        let anySucceeded = false;
         try {
             newItems.forEach(i => { try { InventoryRemove(Player, i.Asset.Group.Name, false); } catch (e) {} });
-            CharacterRefresh(Player, false);
+            try { CharacterRefresh(Player, false); } catch (e) {}
             const now = Date.now();
             if (now - ltLastEscapeSync >= LT_ESCAPE_SYNC_MS) {
                 ltLastEscapeSync = now;
                 try { ChatRoomCharacterUpdate(Player); } catch (e) {}
                 try { ServerPlayerAppearanceSync(); } catch (e) {}
             }
-            if (getAntiRestraintAnnounce()) {
-                const custom = getEscapeEmoteText();
-                let text;
-                if (custom && custom.trim()) {
-                    text = custom.replace("{item}", itemName).replace("{restrainer}", restrainer || "");
+
+            // 脱完检查：被锁住的道具还在身上，记为失败并留待下次重试，不能谎报成功
+            let stillPresent = new Set();
+            try {
+                stillPresent = new Set(
+                    Player.Appearance
+                        .filter(i => LT_RESTRAINT_GROUPS.has(i.Asset.Group.Name))
+                        .map(i => i.Asset.Group.Name)
+                );
+            } catch (e) {}
+            newItems.forEach(i => {
+                const g = i.Asset.Group.Name;
+                if (stillPresent.has(g)) {
+                    ltFailAttempts.set(g, (ltFailAttempts.get(g) || 0) + 1);
                 } else {
-                    text = restrainer
-                        ? `glares at ${restrainer} as the ${itemName} falls away.`
-                        : `glares ahead as the ${itemName} falls away.`;
+                    anySucceeded = true;
+                    ltFailAttempts.delete(g);
                 }
-                ltAntiRestraintEmote(text);
-            }
-            if (typeof ChatRoomSendLocal === 'function') {
-                ChatRoomSendLocal(t('arEscaped', { item: itemName }));
-            }
-        } catch (e) { /* ignore */ }
+            });
+            ltMergeCurrentRestraints();
+        } catch (e) { console.error("🐈‍⬛ [BC] ❌ 反束缚解除错误:", e); }
+
+        // 稍微延后发消息并解锁，等客户端渲染完刷新后的外观
+        window.setTimeout(function () {
+            try {
+                if (anySucceeded && getAntiRestraintAnnounce()) {
+                    const custom = getEscapeEmoteText();
+                    let text;
+                    if (custom && custom.trim()) {
+                        // 全局替换：写「用 {item} 绑住 {item}」时两个占位符都要生效
+                        text = custom.replace(/\{item\}/g, itemName).replace(/\{restrainer\}/g, restrainer || "");
+                    } else {
+                        text = restrainer
+                            ? `glares at ${restrainer} as the ${itemName} falls away.`
+                            : `glares ahead as the ${itemName} falls away.`;
+                    }
+                    ltAntiRestraintEmote(text);
+                }
+                if (anySucceeded && typeof ChatRoomSendLocal === 'function') {
+                    ChatRoomSendLocal(t('arEscaped', { item: itemName }));
+                }
+            } catch (e) { /* ignore */ }
+            ltEscaping = false;
+        }, 200);
     }
 
     function ltShowEscapePrompt(itemName, restrainer, onKeep, onEscape) {
@@ -1356,19 +1419,25 @@
     }
 
     function ltAntiRestraintRefresh() {
+        if (ltEscaping) return;       // 重入锁：正在弹出的确认框/解除流程未结束，不重复触发
         if (!getAntiRestraint()) return;
         if (CurrentScreen !== "ChatRoom") return;
         try {
-            const wl = getAntiRestraintWhitelist();
             const current = Player.Appearance.filter(i => LT_RESTRAINT_GROUPS.has(i.Asset.Group.Name));
+            // 重试 2 次仍脱不掉的（多半被锁住），并入已知，不再反复提示
+            current.forEach(function (i) {
+                const g = i.Asset.Group.Name;
+                if ((ltFailAttempts.get(g) || 0) >= 2 && !ltKnownRestraints.has(g)) {
+                    ltKnownRestraints.add(g);
+                    ltFailAttempts.delete(g);
+                }
+            });
             const candidates = current.filter(i =>
-                !ltKnownRestraints.has(i.Asset.Group.Name) && !wl.includes(i.Asset.Group.Name)
+                !ltKnownRestraints.has(i.Asset.Group.Name) && !ltIsWhitelisted(i)
             );
             if (!candidates.length) return;
 
-            // 立刻标记为已知，避免同一批物品反复触发
-            candidates.forEach(i => ltKnownRestraints.add(i.Asset.Group.Name));
-
+            ltEscaping = true;
             const first = candidates[0];
             const itemName = (first.Asset && (first.Asset.Description || first.Asset.Name)) || "restraint";
             const restrainer = ltLastRestrainer;
@@ -1377,15 +1446,19 @@
             if (getAntiRestraintConfirm()) {
                 ltShowEscapePrompt(itemName, restrainer,
                     () => {
-                        // 保留：把这次检测到的物品从已知集合移除，否则下次不会再提示
+                        // 保留：下次仍会提示；同时解锁，避免卡死
                         candidates.forEach(i => ltKnownRestraints.delete(i.Asset.Group.Name));
+                        ltEscaping = false;
                     },
                     () => { ltDoEscape(candidates, restrainer, itemName); }
                 );
             } else {
                 ltDoEscape(candidates, restrainer, itemName);
             }
-        } catch (e) { console.error("🐈‍⬛ [BC] ❌ 反束缚检测错误:", e.message); }
+        } catch (e) {
+            ltEscaping = false;
+            console.error("🐈‍⬛ [BC] ❌ 反束缚检测错误:", e.message);
+        }
     }
 
     function antiRestraintCommand() {
@@ -3979,7 +4052,7 @@
         var worn = [];
         try {
             worn = Player.Appearance.filter(function(i) { return LT_RESTRAINT_GROUPS.has(i.Asset.Group.Name); })
-                .map(function(i) { return { group: i.Asset.Group.Name, name: (i.Asset.Description || i.Asset.Name) }; });
+                .map(function(i) { return { key: ltGetItemKey(i), display: ltGetItemDisplayName(i), group: i.Asset.Group.Name }; });
         } catch (e) {}
 
         if (!worn.length) {
@@ -3993,15 +4066,22 @@
         function renderWl() {
             wlWrap.innerHTML = '';
             worn.forEach(function(it) {
-                var on = wl.includes(it.group);
+                var on = wl.includes(it.key) || wl.includes(it.group);  // 兼容旧版按槽位存的白名单
                 var chip = document.createElement('span');
                 chip.className = 'lt-rm-chip' + (on ? ' lt-rm-default' : '');
-                chip.textContent = it.name;
+                chip.textContent = it.display;
                 chip.style.cursor = 'pointer';
-                chip.title = it.group;
+                chip.title = it.key;
                 chip.addEventListener('click', function() {
-                    if (wl.includes(it.group)) removeAntiRestraintWhitelist(it.group);
-                    else addAntiRestraintWhitelist(it.group);
+                    if (wl.includes(it.key)) {
+                        removeAntiRestraintWhitelist(it.key);
+                    } else if (wl.includes(it.group)) {
+                        // 旧格式迁移：把粗粒度的槽位名换成精确的道具键
+                        removeAntiRestraintWhitelist(it.group);
+                        addAntiRestraintWhitelist(it.key);
+                    } else {
+                        addAntiRestraintWhitelist(it.key);
+                    }
                     wl = getAntiRestraintWhitelist();
                     renderWl();
                 });
