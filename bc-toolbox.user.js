@@ -2,7 +2,7 @@
 // @name         BC工具箱
 // @name:zh      BC工具箱
 // @namespace    https://github.com/heitaoplay/BC-Toolbox
-// @version      3.4.8
+// @version      3.4.9
 // @description  BC 多功能工具箱 - BC工具箱 (R121 Compatible) + UI 面板 + 角色选择器 + Canvas SVG 图标 + 拖拽排序 + 主题自定义 + 自动解绑女仆
 // @author       heitaoplay
 // @include      /^https:\/\/(www\.)?bondage(projects\.elementfx|-(europe|asia))\.com\/.*/
@@ -30,7 +30,7 @@
     }
     window.__BCToolboxLoaded__ = true;
     let modApi = null;
-    const modversion = "3.4.8";
+    const modversion = "3.4.9";
 
     const rpBtnX    = 955;
     const rpBtnY    = 855;
@@ -744,6 +744,39 @@
         }
     }
 
+    // ── 只读存档访问（关键：绝不创建默认值）──────────────────────────────
+    // getES() 有个副作用：BCToolbox 不存在时会"凭空造一个全 0 的默认对象"写回。
+    // 登录尚未完成时调用它，会把假默认值塞进 Player.ExtensionSettings，
+    // 这正是「重新上线后开关显示开、实际功能没激活」的根源。
+    // peekES() 只读不写，存档没就绪就返回 null。
+    function peekES() {
+        try {
+            if (typeof Player === 'undefined' || !Player) return null;
+            var es = Player.ExtensionSettings;
+            if (!es || !es.BCToolbox) return null;
+            return es.BCToolbox;
+        } catch (e) { return null; }
+    }
+
+    // 运行时开关判定：以存档为唯一权威，存档还没就绪时才退回内存标志。
+    // 这样即使内存标志因登录时序没同步上，功能也不会失效——
+    // 只要开关显示开（存档=1），下面的判定必定为 true。
+    function sdOn() {
+        var s = peekES();
+        if (s && typeof s.superDice !== 'undefined') return s.superDice === 1;
+        return !!_superDice.enabled;
+    }
+    function gdOn() {
+        var s = peekES();
+        if (s && typeof s.guardResident !== 'undefined') return s.guardResident === 1;
+        return !!_guard.enabled;
+    }
+    function sdMode() {
+        var s = peekES();
+        if (s && typeof s.superDiceMode !== 'undefined') return s.superDiceMode === 1 ? 'C' : 'A';
+        return _superDice.mode;
+    }
+
     // ──────────────────────────────────────────
     // 初始化储存
     // ──────────────────────────────────────────
@@ -851,7 +884,7 @@
 
     // 把一个 roll 实例改造成「必胜」；isUnopposed=true 时无视对手、直接给合法上限高点数
     function applySuperDiceRoll(roll, opponentTotal, isUnopposed) {
-        if (_superDice.mode === 'C') {
+        if (sdMode() === 'C') {
             // ∞ 伪装：显示 [∞]，判定无限大
             // 双保险：优先用 getter 覆盖 Total/TotalStr；若 BC 把该属性定义为 non-configurable
             // （defineProperty 会抛错），则退化为「超大数值 + 尽力改写显示」，确保 ∞ 永不静默失效。
@@ -891,20 +924,23 @@
     function ltMakeActivityCheck(orig, attacker, defender) {
         var check = orig.call(this, attacker, defender);
         // 超级骰子：自己参与的 roll 强制必胜（self-only，不改他人参数）
-        if (_superDice.enabled) {
+        if (sdOn()) {
             try {
                 if (attacker && Player && attacker === Player && check && check.AttackerRoll) applySuperDiceRoll(check.AttackerRoll, check.DefenderRoll ? check.DefenderRoll.Total : 0, false);
                 if (defender && Player && defender === Player && check && check.DefenderRoll) applySuperDiceRoll(check.DefenderRoll, check.AttackerRoll ? check.AttackerRoll.Total : 0, false);
             } catch (e) {}
         }
         // 守护常驻：仅在处理法术且自己是守方、屏障生效时，强制防御方获胜（让有害法术反弹）
+        // 用 inSpellUntil 时间戳而非布尔标记：LSCG 收到法术后 setTimeout 1 秒才掷骰，
+        // 布尔标记在原函数返回时就被 finally 清掉，检定真正发生时永远是 false。
         try {
-            if (_guard.enabled && _guard.inSpell && defender === Player) {
+            if (gdOn() && defender === Player && attacker && attacker !== Player && ltInSpellWindow()) {
                 var barrier = window.LSCG.getModule('StateModule') && window.LSCG.getModule('StateModule').BarrierState;
-                if (barrier && barrier.Active) {
+                if (barrier && barrier.Active && check && check.DefenderRoll && check.AttackerRoll) {
                     check.DefenderRoll.Raw = 20;
                     var at = check.AttackerRoll.Total;
                     check.DefenderRoll.Modifier = (at === Infinity) ? Infinity : Math.max(0, at + 1 - 20);
+                    _guard.spellDefended = true; // 一次性：只吃掉紧随其后的那次法术检定
                 }
             }
         } catch (e) {}
@@ -946,7 +982,7 @@
                 var origUnop = iu.UnopposedActivityRoll;
                 iu.UnopposedActivityRoll = function (C) {
                     var roll = origUnop.call(this, C);
-                    if (_superDice.enabled) { try { if (C && Player && C === Player && roll) applySuperDiceRoll(roll, 0, true); } catch (e) {} }
+                    if (sdOn()) { try { if (C && Player && C === Player && roll) applySuperDiceRoll(roll, 0, true); } catch (e) {} }
                     return roll;
                 };
                 iu.UnopposedActivityRoll.__superDicePatched = true;
@@ -955,8 +991,8 @@
             if (!resistDone && hy.GetResistRoll && !hy.GetResistRoll.__superDicePatched) {
                 var origResist = hy.GetResistRoll;
                 hy.GetResistRoll = function () {
-                    if (!_superDice.enabled) return origResist.call(this);
-                    if (_superDice.mode === 'C') return Infinity; // ∞ 伪装
+                    if (!sdOn()) return origResist.call(this);
+                    if (sdMode() === 'C') return Infinity; // ∞ 伪装
                     return 100; // 智能：满值抵抗（内部判定，不显示于聊天），稳赢
                 };
                 hy.GetResistRoll.__superDicePatched = true;
@@ -970,7 +1006,7 @@
                     var senderMemberNumber = sender && sender.MemberNumber;
                     var typesToRegrab = [];
                     // 在移除前先记录被自己抓住的 grab 类型
-                    if (_superDice.enabled && senderMemberNumber && escapeFromMemberNumber == Player.MemberNumber && lm && lm.Leashings) {
+                    if (sdOn() && senderMemberNumber && escapeFromMemberNumber == Player.MemberNumber && lm && lm.Leashings) {
                         try {
                             typesToRegrab = lm.Leashings
                                 .filter(function (p) { return p.IsSource && p.PairedMember === senderMemberNumber; })
@@ -979,7 +1015,7 @@
                     }
                     var ret = origEscape.call(this, sender, escapeFromMemberNumber);
                     // 移除后立即重新抓回
-                    if (_superDice.enabled && typesToRegrab.length > 0) {
+                    if (sdOn() && typesToRegrab.length > 0) {
                         try {
                             var target = (typeof getCharacter === 'function') ? getCharacter(senderMemberNumber) : null;
                             if (target) {
@@ -998,8 +1034,9 @@
             _superDice.hy = hy;
         } catch (e) {}
     }
-    function getSuperDice() { try { return getES().superDice === 1; } catch (e) { return false; } }
-    function getSuperDiceMode() { try { return getES().superDiceMode === 1 ? 'C' : 'A'; } catch (e) { return 'A'; } }
+    // UI 显示读存档（保持原语义）；存档未就绪时退回内存标志，不主动造默认值。
+    function getSuperDice() { return sdOn(); }
+    function getSuperDiceMode() { return sdMode(); }
     function setSuperDice(v) {
         try {
             getES().superDice = v ? 1 : 0;
@@ -1019,23 +1056,27 @@
     }
 
     // ──────────────────────────────────────────
-    // 开关状态同步（修复「UI 显示已开、功能却无效」）
-    //   背景：文件底部的启动同步位于 IIFE 同步段，必然早于 initialize() 里的
-    //   「等待玩家登录」。那时 Player.ExtensionSettings 还没从服务器载入，
-    //   getES() 会凭空建出一个默认值对象（superDice: 0），内存标志因此恒为 false；
-    //   而 _superDice.enabled 原本只在「用户点开关」时才会再赋值，所以一旦启动
-    //   这一刻读错，就再也恢复不了 —— 必须手动点两下开关才生效。
-    //   修复：登录完成后再同步一次，并让 2 秒心跳持续对齐，任何时序丢失都能自愈。
+    // 开关状态同步（v3.4.9 重构：存档为唯一权威）
+    //   老 bug：启动同步早于服务器下发存档，getES() 造出全 0 默认对象把内存标志
+    //   冲成 false，之后即使存档是开，功能也一直不生效——必须手动关开一次。
+    //   新方案：运行时判定（sdOn/gdOn）每次直接读存档，内存标志只是兜底和展示，
+    //   即使同步时序出错也不影响功能。本函数只负责把内存标志对齐存档供诊断显示，
+    //   且用 peekES() 只读，绝不在登录未完成时造默认值。
     // ──────────────────────────────────────────
     function syncToggleStates() {
-        // 玩家未登录时直接跳过，不去读存档。原因是那时 ExtensionSettings 还没从服务器
-        // 载入，getES() 会凭空建出一个默认值对象（superDice:0），把真实的开启状态冲掉 ——
-        // 这正是原 bug 的成因。未登录就等 initialize() 登录完成后那次同步来接手。
+        // 只读存档、不写默认值：peekES() 在 ExtensionSettings 尚未从服务器载入时返回 null，
+        // 此时直接跳过，绝不把内存标志同步成假的 false（那是原 bug 的成因）。
+        var s = peekES();
+        if (!s) return;
         try {
-            if (typeof Player === 'undefined' || !Player || typeof Player.MemberNumber !== 'number') return;
-        } catch (e) { return; }
-        try { _superDice.enabled = getSuperDice(); _superDice.mode = getSuperDiceMode(); } catch (e) {}
-        try { _guard.enabled = getGuard(); } catch (e) {}
+            if (typeof s.superDice !== 'undefined') {
+                _superDice.enabled = s.superDice === 1;
+                _superDice.mode = s.superDiceMode === 1 ? 'C' : 'A';
+            }
+        } catch (e) {}
+        try {
+            if (typeof s.guardResident !== 'undefined') _guard.enabled = s.guardResident === 1;
+        } catch (e) {}
     }
 
     // ──────────────────────────────────────────
@@ -1049,8 +1090,8 @@
             ok: true,
             issues: [],
             lscg: { present: false, version: null, modules: {}, hooks: {} },
-            superDice: { saved: null, inMemory: null, modeInMemory: null },
-            guard: { saved: null, inMemory: null }
+            superDice: { saved: null, inMemory: null, modeInMemory: null, active: null },
+            guard: { saved: null, inMemory: null, active: null }
         };
         try {
             var L = (typeof window !== 'undefined') ? window.LSCG : null;
@@ -1097,20 +1138,27 @@
                 }
             });
 
-            // 内存标志 vs 存档配置
-            r.superDice.saved = getSuperDice();
+            // 存档配置 vs 内存标志 vs 实际生效状态
+            // v3.4.9 起运行时以存档为权威（sdOn/gdOn 直接读存档），所以内存滞后不再影响功能；
+            // 只有「存档说开、实际生效却是关」才算真故障。
+            r.superDice.saved = !!peekES() && peekES().superDice === 1;
             r.superDice.inMemory = !!_superDice.enabled;
             r.superDice.modeInMemory = _superDice.mode;
-            r.guard.saved = getGuard();
+            r.superDice.active = sdOn();
+            r.guard.saved = !!peekES() && peekES().guardResident === 1;
             r.guard.inMemory = !!_guard.enabled;
+            r.guard.active = gdOn();
 
-            if (r.superDice.saved !== r.superDice.inMemory) {
+            if (r.superDice.saved && !r.superDice.active) {
                 r.ok = false;
-                r.issues.push('超级骰子状态不同步：存档=' + r.superDice.saved + ' 内存=' + r.superDice.inMemory + '（心跳会在 2 秒内自动纠正）');
+                r.issues.push('超级骰子存档=开但实际未生效（存档读取异常，请重开游戏）');
             }
-            if (r.guard.saved !== r.guard.inMemory) {
+            if (r.guard.saved && !r.guard.active) {
                 r.ok = false;
-                r.issues.push('守护常驻状态不同步：存档=' + r.guard.saved + ' 内存=' + r.guard.inMemory + '（心跳会在 2 秒内自动纠正）');
+                r.issues.push('守护常驻存档=开但实际未生效（存档读取异常，请重开游戏）');
+            }
+            if (r.superDice.saved !== r.superDice.inMemory || r.guard.saved !== r.guard.inMemory) {
+                r.issues.push('备注：内存标志与存档暂未对齐，但运行时以存档为准，功能不受影响（心跳会自动对齐内存）');
             }
             if (!r.superDice.saved && !r.guard.saved) {
                 r.issues.push('提示：超级骰子与守护常驻当前都是「关闭」状态 —— 若你以为已开启，开关状态可能没存住');
@@ -1134,8 +1182,8 @@
                 lines.push('   ' + k + ' → ' + (v === 'PATCHED' ? '已生效' : v === 'NOT_PATCHED' ? '未安装' : '接口不存在'));
             });
         }
-        lines.push('超级骰子：存档=' + (r.superDice.saved ? '开' : '关') + '  内存=' + (r.superDice.inMemory ? '开' : '关') + '  模式=' + r.superDice.modeInMemory);
-        lines.push('守护常驻：存档=' + (r.guard.saved ? '开' : '关') + '  内存=' + (r.guard.inMemory ? '开' : '关'));
+        lines.push('超级骰子：存档=' + (r.superDice.saved ? '开' : '关') + '  生效=' + (r.superDice.active ? '开' : '关') + '  内存=' + (r.superDice.inMemory ? '开' : '关') + '  模式=' + r.superDice.modeInMemory);
+        lines.push('守护常驻：存档=' + (r.guard.saved ? '开' : '关') + '  生效=' + (r.guard.active ? '开' : '关') + '  内存=' + (r.guard.inMemory ? '开' : '关'));
         if (r.issues && r.issues.length) lines.push('问题/备注：\n - ' + r.issues.join('\n - '));
         return lines.join('\n');
     }
@@ -1148,7 +1196,16 @@
     //   - 关闭时恢复 LSCG 默认 15min 过期行为
     //   - self-only / 持久化 / 2 秒心跳重装补丁兼容 LSCG 重载
     // ──────────────────────────────────────────
-    var _guard = { enabled: false, sm: null, mm: null, ium: null, inSpell: false, patched: false };
+    var _guard = { enabled: false, sm: null, mm: null, ium: null, inSpell: false, inSpellUntil: 0, spellDefended: false, patched: false };
+
+    // LSCG 收到法术命令后，延迟约 1 秒才真正掷防御检定（IncomingSpellCommand 里的 setTimeout）。
+    // 原先用布尔标记 inSpell，在原函数返回时就被 finally 清掉，检定发生时永远是 false。
+    // 改成时间戳窗口：收到法术时记下有效期，检定在窗口内发生才算「正在处理法术」。
+    // spellDefended 保证一次法术只吃掉紧随其后的那次检定，不会误伤期间其他活动。
+    function ltInSpellWindow() {
+        if (_guard.spellDefended) return false;
+        return Date.now() < _guard.inSpellUntil;
+    }
 
     function ensureGuardPatched() {
         try {
@@ -1161,7 +1218,7 @@
             var bs = sm.BarrierState;
             // 开启状态且当前无屏障：自动给自己加一个无限屏障（免去手动释放护盾魔法；
             // 同时作为延迟加载兜底 + 屏障被其它路径消耗后的自动补回）
-            if (_guard.enabled && bs && !bs.Active) {
+            if (gdOn() && bs && !bs.Active) {
                 try { bs.Barrier((typeof Player !== 'undefined' && Player && Player.MemberNumber) || -1, false, 0); } catch (e) {}
             }
             // 以「模块实例是否变化」判定是否需要重包裹，不再依赖 MakeActivityCheck 上的标志
@@ -1172,14 +1229,18 @@
                                  mm.IncomingSpellCommand && mm.IncomingSpellCommand.__guardPatched;
             if (alreadyPatched) return;
 
-            // 1) 施法入口打标记，用于 MakeActivityCheck 识别「正在处理法术」
+            // 1) 施法入口打时间戳，供 MakeActivityCheck 识别「正在处理法术」
+            //    只对 spell 命令开窗（pair 类不走防御检定）；窗口 8 秒覆盖 LSCG 的 1 秒延迟与队列抖动。
             var origIncomingSpellCommand = mm.IncomingSpellCommand;
             mm.IncomingSpellCommand = function(sender, msg) {
-                if (_guard.enabled) {
-                    _guard.inSpell = true;
-                    try { return origIncomingSpellCommand.call(this, sender, msg); }
-                    finally { _guard.inSpell = false; }
-                }
+                try {
+                    var isSpell = !!(msg && msg.command && msg.command.name === "spell");
+                    if (gdOn() && isSpell) {
+                        _guard.inSpell = true;
+                        _guard.inSpellUntil = Date.now() + 8000;
+                        _guard.spellDefended = false;
+                    }
+                } catch (e) {}
                 return origIncomingSpellCommand.call(this, sender, msg);
             };
             mm.IncomingSpellCommand.__guardPatched = true;
@@ -1189,7 +1250,7 @@
             // 3) 屏障施放时改为无限时长
             var origBarrier = bs.Barrier;
             bs.Barrier = function(memberNumber, emote, duration) {
-                if (_guard.enabled) {
+                if (gdOn()) {
                     try { return origBarrier.call(this, memberNumber, emote, 0); }
                     catch (e) { return origBarrier.call(this, memberNumber, emote, duration); }
                 }
@@ -1200,7 +1261,7 @@
             // 4) 任何移除（反弹/击碎/到期/解除）都先走原版移除，再立即补回（保持常驻）
             var origRecover = bs.Recover;
             bs.Recover = function(emote) {
-                if (_guard.enabled) {
+                if (gdOn()) {
                     try {
                         var by = (this.config && this.config.activatedBy) ||
                                  (typeof Player !== 'undefined' && Player && Player.MemberNumber) || -1;
@@ -1214,7 +1275,7 @@
             bs.Recover.__guardPatched = true;
 
             // 开启状态下若屏障已存在，立即补满为无限时长
-            if (_guard.enabled && bs.Active) {
+            if (gdOn() && bs.Active) {
                 try { var by2 = (bs.config && bs.config.activatedBy) || -1; bs.Activate(by2, 0, false); } catch (e) {}
             }
 
@@ -1224,7 +1285,7 @@
             _guard.patched = true;
         } catch (e) {}
     }
-    function getGuard() { try { return getES().guardResident === 1; } catch (e) { return false; } }
+    function getGuard() { return gdOn(); }
     function setGuard(v) {
         try {
             getES().guardResident = v ? 1 : 0;
@@ -4642,8 +4703,8 @@
             brief.push("已接管 " + hooked.length + "/4：" + (hooked.join("、") || "无"));
             if (missing.length) brief.push("缺失：" + missing.join("、"));
         }
-        brief.push("超级骰子 " + (r.superDice.inMemory ? "开" : "关") + "（存档 " + (r.superDice.saved ? "开" : "关") + "）");
-        brief.push("守护常驻 " + (r.guard.inMemory ? "开" : "关") + "（存档 " + (r.guard.saved ? "开" : "关") + "）");
+        brief.push("超级骰子 生效" + (r.superDice.active ? "开" : "关") + "（存档 " + (r.superDice.saved ? "开" : "关") + "）");
+        brief.push("守护常驻 生效" + (r.guard.active ? "开" : "关") + "（存档 " + (r.guard.saved ? "开" : "关") + "）");
 
         // 聊天输出单独容错：即使不在聊天室导致发送失败，控制台那份结果也已经打出来了
         try {
@@ -5189,15 +5250,14 @@
     .catch(error => { console.error("🐈‍⬛ [BC] ❌ 初始化失敗:", error); });
 
     // 超级骰子 + 守护常驻：启动同步 + 心跳重装补丁（兼容 LSCG 重载）
-    // 这里先同步一次，让 LSCG 早于登录就绪时也能用；真正的权威同步在 initialize() 登录之后。
+    // 运行时以存档为权威（sdOn/gdOn），这里的同步只用于对齐内存标志供诊断显示。
     syncToggleStates();
     setInterval(function () {
-        try {
-            syncToggleStates();   // 持续对齐存档，启动时序造成的丢失会在 2 秒内自动纠正
-            ensureMakeActivityCheckPatched();
-            ensureSuperDicePatched();
-            ensureGuardPatched();
-        } catch (e) {}
+        // 各自独立 try：任何一个环节抛错都不能拖累其它 hook 的安装
+        try { syncToggleStates(); } catch (e) {}
+        try { ensureMakeActivityCheckPatched(); } catch (e) {}
+        try { ensureSuperDicePatched(); } catch (e) {}
+        try { ensureGuardPatched(); } catch (e) {}
     }, 2000);
 
     // ── 调试 / 自动化接口（CDP 热注入验证用，普通用户无感） ──
@@ -5209,6 +5269,7 @@
             ensureSuperDicePatched: ensureSuperDicePatched, ensureGuardPatched: ensureGuardPatched,
             ensureMakeActivityCheckPatched: ensureMakeActivityCheckPatched,
             syncToggleStates: syncToggleStates,
+            peekES: peekES, sdOn: sdOn, gdOn: gdOn, sdMode: sdMode, ltInSpellWindow: ltInSpellWindow,
             diagnose: function () {
                 var r = diagnoseSuperDice();
                 console.log("🐈‍⬛ [BC] 🔍 自检结果：\n" + describeDiagnosis(r));

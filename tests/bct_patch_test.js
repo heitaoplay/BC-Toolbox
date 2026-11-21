@@ -46,7 +46,12 @@ function buildEnv(withLeashing) {
         var Player = { MemberNumber: 1 };
         var LT_MAKE_PATCHED = '__ltMakePatched';
         var _superDice = { enabled: true, mode: 'A', iu: null, hy: null };
-        var _guard = { enabled: false, inSpell: false };
+        var _guard = { enabled: false, inSpell: false, inSpellUntil: 0, spellDefended: false };
+        // v3.4.9 起运行时判定改为 sdOn/sdMode（以存档为权威），mock 里用内存标志直接返回
+        function sdOn() { return _superDice.enabled; }
+        function gdOn() { return _guard.enabled; }
+        function sdMode() { return _superDice.mode; }
+        function ltInSpellWindow() { return !_guard.spellDefended && Date.now() < _guard.inSpellUntil; }
         ${fnApply}
         ${fnLtMake}
         ${fnMake}

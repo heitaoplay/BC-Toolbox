@@ -1,4 +1,5 @@
-// 验证 syncToggleStates 的时序修复：未登录时不再用默认值冲掉真实存档
+// v3.4.9 验证：存档为唯一权威，运行时判定不再依赖内存标志
+// 核心场景：重新登录后存档=开、内存标志=关（老 bug 现场），sdOn/gdOn 仍必须判定为开
 const fs = require('fs');
 const src = fs.readFileSync('/Users/amoy_johnny/WorkBuddy/BC工具箱/bc-toolbox.user.js', 'utf8');
 
@@ -14,78 +15,78 @@ function extractFn(source, name) {
     return source.slice(idx, i);
 }
 
-const fnSync = extractFn(src, 'syncToggleStates');
-console.log('抽取 syncToggleStates（' + fnSync.length + ' 字符）\n');
+// 从真实脚本抽取被测函数（保证测的是线上代码）
+const FN = {
+    peekES: extractFn(src, 'peekES'),
+    sdOn: extractFn(src, 'sdOn'),
+    gdOn: extractFn(src, 'gdOn'),
+    sdMode: extractFn(src, 'sdMode'),
+    sync: extractFn(src, 'syncToggleStates')
+};
+console.log('已抽取真实函数: ' + Object.keys(FN).join(', ') + '\n');
 
-// 模拟 getSuperDice / getGuard：行为与真实实现一致 ——
-// Player 未登录（无 MemberNumber）时，getES() 会凭空建出默认值 superDice:0
 function makeEnv(playerState) {
     const code = `
         var Player = PLAYER_STATE;
         var _superDice = { enabled: false, mode: 'A' };
         var _guard = { enabled: false };
-        var esCreated = false;
-        function getES() {
-            if (!Player.ExtensionSettings) Player.ExtensionSettings = {};
-            if (!Player.ExtensionSettings.BCToolbox) {
-                esCreated = true;
-                Player.ExtensionSettings.BCToolbox = { superDice: 0, superDiceMode: 0, guardResident: 0 };
-            }
-            return Player.ExtensionSettings.BCToolbox;
-        }
-        function getSuperDice() { try { return getES().superDice === 1; } catch (e) { return false; } }
-        function getSuperDiceMode() { try { return getES().superDiceMode === 1 ? 'C' : 'A'; } catch (e) { return 'A'; } }
-        function getGuard() { try { return getES().guardResident === 1; } catch (e) { return false; } }
-        ${fnSync}
+        ${FN.peekES}
+        ${FN.sdOn}
+        ${FN.gdOn}
+        ${FN.sdMode}
+        ${FN.sync}
         return {
-            sync: syncToggleStates,
-            st: function () { return { sd: _superDice.enabled, mode: _superDice.mode, gd: _guard.enabled, esCreated: esCreated }; },
-            setSaved: function (v) { Player.ExtensionSettings = { BCToolbox: { superDice: v ? 1 : 0, superDiceMode: 1, guardResident: v ? 1 : 0 } }; }
+            peekES: peekES, sdOn: sdOn, gdOn: gdOn, sdMode: sdMode, sync: syncToggleStates,
+            setMem: function(sd, gd, mode) { _superDice.enabled = sd; _superDice.mode = mode || 'A'; _guard.enabled = gd; },
+            mem: function() { return { sd: _superDice.enabled, gd: _guard.enabled, mode: _superDice.mode }; },
+            setSaved: function(sd, gd, mode) { Player.ExtensionSettings = { BCToolbox: { superDice: sd, guardResident: gd, superDiceMode: mode } }; }
         };
     `;
     return new Function('PLAYER_STATE', code)(playerState);
 }
 
-console.log('========== 场景 1：脚本底部同步跑在登录之前（原 bug 现场）==========');
-const env1 = makeEnv({ MemberNumber: undefined });  // 玩家还没登录
-env1.sync();                                        // 文件底部那次同步
-const s1 = env1.st();
-console.log('  未登录时同步后 → 超级骰子=' + s1.sd + '，守护=' + s1.gd);
-console.log('  是否凭空创建了默认存档对象:', s1.esCreated ? '是' : '否');
-console.log('  ' + (!s1.esCreated && !s1.sd ? '✅ 正确跳过：不再用默认值 superDice:0 污染内存标志' : '❌ 仍然读到了默认值'));
-
-console.log('\n========== 场景 2：登录完成后的权威同步（真实存档 = 开启）==========');
-const env2 = makeEnv({ MemberNumber: undefined });
-env2.sync();                       // 底部那次（跳过）
-env2.setSaved(true);               // 模拟登录：服务器把真实存档载入进来
-// 真实代码里 Player.MemberNumber 会在登录后变成数字，这里同步更新
-// （makeEnv 里 Player 是引用，直接改写属性即可）
-env2.setSaved(true);
-// 为了让守卫通过，补上 MemberNumber
-const code2 = makeEnv({ MemberNumber: 12345, ExtensionSettings: { BCToolbox: { superDice: 1, superDiceMode: 1, guardResident: 1 } } });
-code2.sync();
-const s2 = code2.st();
-console.log('  登录后同步 → 超级骰子=' + s2.sd + '，模式=' + s2.mode + '，守护=' + s2.gd);
-console.log('  ' + (s2.sd && s2.gd && s2.mode === 'C' ? '✅ 正确读到存档：超级骰子开、∞ 模式、守护开' : '❌ 未读到存档'));
-
-console.log('\n========== 场景 3：存档为关闭时不应误开 ==========');
-const env3 = makeEnv({ MemberNumber: 12345, ExtensionSettings: { BCToolbox: { superDice: 0, superDiceMode: 0, guardResident: 0 } } });
-env3.sync();
-const s3 = env3.st();
-console.log('  同步后 → 超级骰子=' + s3.sd + '，守护=' + s3.gd);
-console.log('  ' + (!s3.sd && !s3.gd ? '✅ 正确保持关闭' : '❌ 被误开'));
-
-console.log('\n========== 场景 4：反复同步（模拟 2 秒心跳跑 1000 次）==========');
-const env4 = makeEnv({ MemberNumber: 12345, ExtensionSettings: { BCToolbox: { superDice: 1, superDiceMode: 0, guardResident: 1 } } });
-let ok4 = true;
-for (let i = 0; i < 1000; i++) {
-    env4.sync();
-    const s = env4.st();
-    if (!s.sd || !s.gd) { ok4 = false; break; }
+let pass = true;
+function check(name, cond, detail) {
+    console.log((cond ? '  ✅ ' : '  ❌ ') + name + (detail ? ' — ' + detail : ''));
+    if (!cond) pass = false;
 }
-console.log('  1000 次后 → 超级骰子=' + env4.st().sd + '，守护=' + env4.st().gd);
-console.log('  ' + (ok4 ? '✅ 状态稳定，无副作用' : '❌ 状态被破坏'));
+
+console.log('========== 场景 1：登录未完成，存档对象不存在 → 只读不造假 ==========');
+const e1 = makeEnv({ MemberNumber: undefined });
+check('peekES 返回 null', e1.peekES() === null);
+e1.sync();
+check('同步后内存标志不被假值污染', e1.mem().sd === false && e1.mem().gd === false);
+check('未生成默认存档对象', e1.peekES() === null);
+
+console.log('\n========== 场景 2：老 bug 现场（存档开 / 内存关）→ 功能仍生效 ==========');
+const e2 = makeEnv({ MemberNumber: 12345, ExtensionSettings: { BCToolbox: { superDice: 1, guardResident: 1, superDiceMode: 1 } } });
+e2.setMem(false, false, 'A');  // 模拟内存标志滞留为关
+check('sdOn() 以存档为准判定为开', e2.sdOn() === true, '内存标志=' + e2.mem().sd);
+check('gdOn() 以存档为准判定为开', e2.gdOn() === true, '内存标志=' + e2.mem().gd);
+check('模式以存档为准 = C(∞)', e2.sdMode() === 'C');
+e2.sync();
+check('心跳同步后内存标志被纠正为开', e2.mem().sd === true && e2.mem().gd === true);
+
+console.log('\n========== 场景 3：存档关 / 内存开 → 功能必须关闭（不能误开）==========');
+const e3 = makeEnv({ MemberNumber: 12345, ExtensionSettings: { BCToolbox: { superDice: 0, guardResident: 0, superDiceMode: 0 } } });
+e3.setMem(true, true, 'C');
+check('sdOn() 判定为关', e3.sdOn() === false);
+check('gdOn() 判定为关', e3.gdOn() === false);
+check('模式 = A(智能)', e3.sdMode() === 'A');
+
+console.log('\n========== 场景 4：切换开关立即生效 ==========');
+const e4 = makeEnv({ MemberNumber: 12345, ExtensionSettings: { BCToolbox: { superDice: 0, guardResident: 0, superDiceMode: 0 } } });
+e4.setSaved(1, 0, 1);
+check('开启后 sdOn 立即为开', e4.sdOn() === true && e4.sdMode() === 'C');
+e4.setSaved(0, 0, 0);
+check('关闭后 sdOn 立即为关', e4.sdOn() === false);
+
+console.log('\n========== 场景 5：1000 次心跳稳定性 ==========');
+const e5 = makeEnv({ MemberNumber: 12345, ExtensionSettings: { BCToolbox: { superDice: 1, guardResident: 1, superDiceMode: 0 } } });
+let stable = true;
+for (let i = 0; i < 1000; i++) { e5.sync(); if (!e5.sdOn() || !e5.gdOn()) { stable = false; break; } }
+check('1000 次同步后状态稳定', stable);
 
 console.log('\n========== 结论 ==========');
-const pass = !s1.esCreated && s2.sd && s2.gd && !s3.sd && ok4;
-console.log(pass ? '✅ 时序修复全部通过' : '❌ 存在问题');
+console.log(pass ? '✅ v3.4.9 存档权威修复全部通过' : '❌ 存在问题');
+process.exit(pass ? 0 : 1);
